@@ -4,32 +4,39 @@ Claude Code를 위한 MCP 서버 - 세션 컨텍스트 관리, 작업 흐름 관
 
 ## 설치
 
-### 1. 프로젝트에 z-agent 파일 설치
+### 1. z-agent 클론 및 빌드
 
 ```bash
-npx z-agent init
+# 홈 디렉토리에 클론 (권장)
+git clone https://github.com/Zeliper/z-agent.git ~/.z-agent-mcp
+cd ~/.z-agent-mcp
+npm install
+npm run build
 ```
-
-이 명령어는 다음을 설치합니다:
-- `.z-agent/` - 설정, 템플릿, 스크립트
-- `.claude/commands/` - Claude Code 커스텀 명령어
 
 ### 2. Claude Code에 MCP 서버 등록
 
 ```bash
-# npm 패키지 사용 시 (권장)
-claude mcp add z-agent -- npx -y z-agent serve
-
-# 로컬 개발/테스트 시
-claude mcp add z-agent -- node /path/to/z-agent/dist/index.js
+claude mcp add z-agent -- node ~/.z-agent-mcp/dist/index.js
 ```
 
-MCP 서버 등록 확인:
+등록 확인:
 ```bash
 claude mcp list
 ```
 
-### 3. Claude Code 재시작
+### 3. 프로젝트에 z-agent 템플릿 설치
+
+프로젝트 폴더에서:
+```bash
+node ~/.z-agent-mcp/bin/z-agent.cjs init
+```
+
+이 명령어는 다음을 설치합니다:
+- `.z-agent/` - 설정, 템플릿, 스크립트
+- `.claude/commands/` - Claude Code 커스텀 명령어 (`/task`, `/ask`, `/planning`)
+
+### 4. Claude Code 재시작
 
 설정 적용을 위해 Claude Code를 재시작하세요.
 
@@ -103,17 +110,13 @@ MCP 서버가 제공하는 도구들:
 | ❌ | cancelled |
 | 🚫 | blocked |
 
-## 개발
+## 업데이트
 
 ```bash
-# 의존성 설치
+cd ~/.z-agent-mcp
+git pull
 npm install
-
-# 빌드
 npm run build
-
-# 개발 모드 (watch)
-npm run dev
 ```
 
 ## 라이선스
