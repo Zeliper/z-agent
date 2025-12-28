@@ -1,107 +1,59 @@
 # /ask Command
 
-사용자가 질문을 할 때 사용하는 z-agent 명령어입니다.
+질문에 답변하고 저장합니다. **z_* 도구만 사용하세요.**
 
-## 중요: 도구 사용 규칙
+## 흐름
 
-**반드시 z-agent MCP 도구(z_*)만 사용하세요.**
+1. `z_search_lessons(query: "키워드")` - 관련 lesson 검색
+2. 필요시 `z_list_dir`, `z_glob`, `z_read_file`로 코드 탐색
+3. 답변 작성 후 **Context 절약 방식으로 저장**
 
-### 금지된 도구
-- ❌ Task tool (Explore, Agent 등)
-- ❌ Glob tool
-- ❌ Grep tool
-- ❌ Read tool
+## Context 절약 방식 (권장)
 
-### 허용된 도구
-- ✅ z_analyze_difficulty
-- ✅ z_search_lessons
-- ✅ z_list_dir
-- ✅ z_glob
-- ✅ z_read_file
-- ✅ z_save_answer (필수 - 답변 저장용)
+긴 답변은 반드시 이 방식으로 저장하세요:
 
-## 실행 흐름
-
-### 1. 난이도 분석
 ```
-z_analyze_difficulty(input: "사용자 질문")
-→ difficulty: H/M/L
-→ 답변 깊이 결정
-```
+# 1. 먼저 답변을 파일에 저장
+Write(.z-agent/temp/answer_draft.md, "전체 답변 내용...")
 
-### 2. 관련 Lesson 검색
-```
-z_search_lessons(query: "핵심 키워드")
-→ 관련 lesson 참조
-```
-
-### 3. 프로젝트 탐색 (필요시)
-```
-z_list_dir(dirPath: ".", recursive: true)
-→ 프로젝트 구조 파악
-
-z_glob(pattern: "**/*.ts")
-→ 특정 파일 검색
-
-z_read_file(filePath: "src/main.ts")
-→ 파일 내용 확인
-```
-
-### 4. 답변 저장 (필수!)
-```
+# 2. 파일 경로로 z_save_answer 호출
 z_save_answer(
   question: "원래 질문",
-  answer: "전체 답변 내용",
+  answer_file_path: ".z-agent/temp/answer_draft.md",
   summary: "1-2문장 요약",
-  relatedLessons: ["lesson-001"],
-  relatedFiles: ["src/main.ts"]
+  relatedLessons: ["lesson-001"],   // 선택
+  relatedFiles: ["src/main.ts"],    // 선택
+  relatedPlans: ["PLAN-001"],       // 선택
+  relatedTasks: ["task-001"]        // 선택
 )
-→ 파일로 저장, 요약만 context에 남김
 ```
 
-## 예시
+**왜?** answer 파라미터에 긴 텍스트를 넣으면 tool_use 메시지에 포함되어 Context를 소모합니다.
+파일 경로만 전달하면 Context가 절약됩니다.
 
+## 상호 참조 기능
+
+### 이전 답변 참조
 ```
-사용자: /ask 이 프로젝트 구조를 설명해줘
-
-1. z_analyze_difficulty(input="이 프로젝트 구조를 설명해줘")
-   → difficulty: M
-
-2. z_search_lessons(query="프로젝트 구조")
-   → lessons 참조
-
-3. z_list_dir(dirPath=".", recursive=true)
-   → 프로젝트 파일 목록
-
-4. z_read_file(filePath="package.json")
-   → 프로젝트 정보
-
-5. z_save_answer(
-     question="이 프로젝트 구조를 설명해줘",
-     answer="이 프로젝트는 TypeScript로 작성된 MCP 서버입니다...(상세 내용)",
-     summary="TypeScript 기반 MCP 서버로, src/에 핵심 코드가 있고 template/에 사용자 템플릿이 위치함",
-     relatedFiles=["package.json", "src/index.ts"]
-   )
-   → 요약만 사용자에게 표시
+z_get_answer(answerId: "answer-001")
+→ 해당 Answer의 전체 내용과 관련 항목 조회
 ```
 
-## 응답 형식
-
-z_save_answer가 반환하는 형식 그대로 출력:
-
-```markdown
-## 답변 요약
-
-{1-2문장 요약}
-
-📁 상세 내용: .z-agent/answers/answer-XXX.md
+### Answer를 Plan/Task와 연결
+```
+z_link_answer_to_plan(answerId: "answer-001", planId: "PLAN-001")
+z_link_answer_to_task(answerId: "answer-001", taskId: "task-001")
 ```
 
-## 주의사항
+### 관련 항목 조회
+```
+z_get_related(entityType: "answer", entityId: "answer-001")
+→ 연결된 Plans, Tasks, Lessons 목록
+```
 
-- **z_* MCP 도구만 사용** (Explore, Glob, Grep, Read 금지)
-- **반드시 z_save_answer로 답변 저장** (context 절약)
-- Task 파일을 생성하지 않음 (단순 Q&A)
-- `.z-agent/`와 `.claude/` 폴더는 프로젝트 설명 시 제외
-- 복잡한 질문은 상세하게, 간단한 질문은 간결하게
-- 답변의 상세 내용은 파일에, 요약만 세션에 남김
+## 규칙
+
+- Task, Glob, Grep, Read 도구 **금지** (z_* 버전 사용)
+- 반드시 z_save_answer로 저장 (context 절약)
+- **긴 답변은 반드시 answer_file_path 방식 사용**
+- 요약만 세션에 남김

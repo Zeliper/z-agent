@@ -35,7 +35,45 @@
 - ✅ z_list_tasks (Task 목록 조회)
 - ✅ z_list_lessons (Lesson 목록 조회)
 - ✅ z_list_plans (Plan 목록 조회)
+- ✅ z_list_answers (Answer 목록 조회)
+- ✅ z_get_answer (Answer 상세 조회)
+- ✅ z_link_answer_to_task (Answer 연결)
+- ✅ z_get_related (관련 항목 조회)
 - ✅ z_query (통합 검색)
+
+## 상호 참조 기능
+
+### Answer를 참조하여 Task 실행
+```
+# 사용자가 "answer-001 내용 기반으로 수정해줘" 요청 시
+1. z_get_answer(answerId: "answer-001")
+   → Answer 내용 및 관련 항목 확인
+
+2. z_create_task(
+     description: "answer-001 기반 수정 작업",
+     todos: [...]
+   )
+   → task-001 생성
+
+3. z_link_answer_to_task(answerId: "answer-001", taskId: "task-001")
+   → 양방향 연결
+```
+
+### Plan과 Answer가 모두 연결된 경우
+```
+# PLAN-001이 answer-001을 참조하고 있다면
+z_get_plan("PLAN-001")
+→ relatedAnswers: ["answer-001"]
+
+# Task 생성 시 Answer도 함께 연결
+z_link_answer_to_task("answer-001", "task-001")
+```
+
+### 관련 항목 조회
+```
+z_get_related(entityType: "task", entityId: "task-001")
+→ 연결된 Answers, Plans, Lessons 목록
+```
 
 ## 실행 흐름
 
@@ -74,6 +112,7 @@ z_create_task(
 
 z_get_plan(planId: "PLAN-001")
 → plan.todos, plan.title, plan.description
+→ plan.relatedAnswers (연결된 Answer 목록)
 ```
 
 #### 2. Task 생성 (Plan 기반)
@@ -90,6 +129,39 @@ z_create_task(
 z_link_plan_to_task(planId: "PLAN-001", taskId: "task-001")
 → Plan 상태가 in_progress로 변경
 → Plan의 linkedTasks에 task-001 추가
+```
+
+#### 4. 관련 Answer 연결 (Plan에 Answer가 있는 경우)
+```
+# Plan의 relatedAnswers에서 Answer ID 확인 후 연결
+for answerId in plan.relatedAnswers:
+  z_link_answer_to_task(answerId, "task-001")
+```
+
+### C. Answer 기반 Task (answer-XXX 참조 시)
+
+#### 1. Answer 조회
+```
+사용자: /task answer-001 내용대로 수정해줘
+
+z_get_answer(answerId: "answer-001")
+→ answer.question, answer.summary
+→ answer.relatedPlans (연결된 Plan 목록)
+```
+
+#### 2. Task 생성
+```
+z_create_task(
+  description: "answer-001 기반 수정",
+  todos: [...]
+)
+→ taskId: task-001
+```
+
+#### 3. Answer-Task 연결
+```
+z_link_answer_to_task(answerId: "answer-001", taskId: "task-001")
+→ 양방향 연결됨
 ```
 
 ### 공통: TODO 처리
@@ -132,35 +204,28 @@ z_edit_file("src/main.ts", oldString, newString)
 **주의: Edit/Write tool 대신 z_write_file/z_edit_file 사용**
 → context에 코드 내용이 포함되지 않음
 
-## 예시: Plan 기반 Task
+## 예시: Answer 기반 Task
 
 ```
-사용자: /task PLAN-001 시작해줘
+사용자: /task answer-001 분석 결과대로 수정해줘
 
-1. z_get_plan("PLAN-001")
-   → title: "마이크로서비스 전환"
-   → todos: [
-       { description: "현재 의존성 분석", difficulty: "M" },
-       { description: "분리 가능한 모듈 식별", difficulty: "H" },
-       ...
-     ]
+1. z_get_answer("answer-001")
+   → question: "성능 문제 분석해줘"
+   → summary: "메모리 누수와 N+1 쿼리 문제 발견"
 
 2. z_create_task(
-     description: "마이크로서비스 전환",
-     todos: plan.todos
+     description: "answer-001 기반 성능 수정",
+     todos: [
+       { description: "메모리 누수 수정", difficulty: "H" },
+       { description: "N+1 쿼리 최적화", difficulty: "H" }
+     ]
    )
    → task-001
 
-3. z_link_plan_to_task("PLAN-001", "task-001")
+3. z_link_answer_to_task("answer-001", "task-001")
    → ✅ 연결됨
 
 4. TODO 순차 처리...
-   - z_update_todo("task-001", 1, "in_progress")
-   - z_get_agent_prompt("M", "현재 의존성 분석")
-   - Task tool로 sonnet에 위임
-   - z_save_todo_result(...)
-   - z_update_todo("task-001", 1, "complete")
-   - ...
 
 5. z_generate_summary("task-001")
    → 완료 요약
@@ -168,48 +233,53 @@ z_edit_file("src/main.ts", oldString, newString)
 ## Task [task-001] 완료
 
 ### 요약
-PLAN-001 기반 마이크로서비스 전환 완료
+answer-001 분석 결과 기반 성능 수정 완료
 
 ### 완료 항목
-- ✅ TODO #1: 현재 의존성 분석
-- ✅ TODO #2: 분리 가능한 모듈 식별
-...
+- ✅ TODO #1: 메모리 누수 수정
+- ✅ TODO #2: N+1 쿼리 최적화
 
-### 연결된 Plan
+### 연결 정보
+📁 .z-agent/task-001/
+🔗 연결됨: answer-001
+```
+
+## 예시: Plan 기반 Task (Answer 포함)
+
+```
+사용자: /task PLAN-001 시작해줘
+
+1. z_get_plan("PLAN-001")
+   → title: "성능 최적화"
+   → relatedAnswers: ["answer-001"]
+   → todos: [...]
+
+2. z_create_task(...)
+   → task-001
+
+3. z_link_plan_to_task("PLAN-001", "task-001")
+   → ✅ 연결됨
+
+4. z_link_answer_to_task("answer-001", "task-001")
+   → ✅ Answer도 연결됨
+
+5. TODO 순차 처리...
+
+6. z_generate_summary("task-001")
+
+## Task [task-001] 완료
+
+### 연결된 항목
 📁 .z-agent/plans/PLAN-001.md
-```
-
-## 예시: 일반 Task
-
-```
-사용자: /task 버그 수정해줘
-
-1. z_analyze_difficulty("버그 수정해줘")
-   → difficulty: M
-
-2. z_search_lessons("버그 디버깅")
-   → lesson-002 참조
-
-3. z_create_task("버그 수정", todos=[...])
-   → task-002
-
-4. z_list_dir("src", recursive=true)
-   → 파일 구조 파악
-
-5. z_read_file("src/buggy.ts")
-   → 코드 분석
-
-6. z_edit_file("src/buggy.ts", "old", "new")
-   → ✅ 수정 완료
-
-7. z_save_todo_result(...)
-8. z_generate_summary("task-002")
+📁 .z-agent/answers/answer-001.md
 ```
 
 ## 주의사항
 
 - **z_* MCP 도구만 사용** (기본 도구 금지)
 - `PLAN-XXX` 입력 시 해당 Plan 기반으로 Task 생성
+- `answer-XXX` 참조 시 해당 Answer와 연결
 - 세션 컨텍스트 최소화: 상세 내용은 파일에 저장
 - 에러 발생 시 사용자에게 선택지 제공
 - `.z-agent/`와 `.claude/` 폴더는 프로젝트 분석 시 제외
+- **ID 참조 시 해당 엔티티 조회 후 연결 정보 포함**

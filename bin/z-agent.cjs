@@ -186,14 +186,24 @@ function setupMcpConfig() {
 
     const existingConfig = config.mcpServers['z-agent'];
     if (existingConfig) {
-      // Check if config is different
+      // Check if config needs update
       const existingStr = JSON.stringify(existingConfig);
       const newStr = JSON.stringify(mcpConfig);
-      if (existingStr === newStr) {
+
+      // Also check if platform-specific wrapper is correct
+      const needsWindowsWrapper = isWindows && existingConfig.command === 'npx';
+      const hasWrongWrapper = isWindows && existingConfig.command !== 'cmd';
+
+      if (existingStr === newStr && !needsWindowsWrapper && !hasWrongWrapper) {
         log(`  [${name}] z-agent MCP config already up to date`, 'dim');
         continue;
       }
-      log(`  [${name}] updating z-agent MCP config`, 'green');
+
+      if (needsWindowsWrapper || hasWrongWrapper) {
+        log(`  [${name}] updating z-agent MCP config (adding Windows wrapper)`, 'green');
+      } else {
+        log(`  [${name}] updating z-agent MCP config`, 'green');
+      }
     } else {
       log(`  [${name}] adding z-agent MCP config`, 'green');
     }

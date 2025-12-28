@@ -25,7 +25,7 @@ function getZAgentRoot() {
 }
 function ensureDirectories() {
     const root = getZAgentRoot();
-    const dirs = ["tasks", "lessons", "scripts", "agents", "skills", "templates", "plans", "answers"];
+    const dirs = ["tasks", "lessons", "scripts", "agents", "skills", "templates", "plans", "answers", "temp"];
     for (const dir of dirs) {
         const dirPath = path.join(root, dir);
         if (!fs.existsSync(dirPath)) {
@@ -81,7 +81,7 @@ function getNextAnswerId() {
     const maxNum = Math.max(...files.map((f) => parseInt(f.match(/answer-(\d+)\.md/)?.[1] || "0")));
     return `answer-${String(maxNum + 1).padStart(3, "0")}`;
 }
-function saveAnswer(question, answer, summary, relatedLessons = [], relatedFiles = []) {
+function saveAnswer(question, answer, summary, relatedLessons = [], relatedFiles = [], relatedPlans = [], relatedTasks = []) {
     const answerId = getNextAnswerId();
     const now = new Date().toISOString();
     const content = `---
@@ -91,6 +91,8 @@ summary: "${summary.replace(/"/g, '\\"')}"
 createdAt: ${now}
 relatedLessons: [${relatedLessons.map(l => `"${l}"`).join(", ")}]
 relatedFiles: [${relatedFiles.map(f => `"${f}"`).join(", ")}]
+relatedPlans: [${relatedPlans.map(p => `"${p}"`).join(", ")}]
+relatedTasks: [${relatedTasks.map(t => `"${t}"`).join(", ")}]
 ---
 
 # 질문
@@ -102,12 +104,14 @@ ${answer}
 # 참고
 ${relatedLessons.length > 0 ? `- Lessons: ${relatedLessons.join(", ")}` : "- Lessons: 없음"}
 ${relatedFiles.length > 0 ? `- Files: ${relatedFiles.join(", ")}` : "- Files: 없음"}
+${relatedPlans.length > 0 ? `- Plans: ${relatedPlans.join(", ")}` : "- Plans: 없음"}
+${relatedTasks.length > 0 ? `- Tasks: ${relatedTasks.join(", ")}` : "- Tasks: 없음"}
 `;
     const filePath = path.join(getZAgentRoot(), "answers", `${answerId}.md`);
     fs.writeFileSync(filePath, content, "utf-8");
     return { answerId, filePath, summary };
 }
-function createPlan(title, description) {
+function createPlan(title, description, relatedAnswers = []) {
     const planId = getNextPlanId();
     const now = new Date().toISOString();
     const difficultyResult = analyzeDifficulty(description);
@@ -119,6 +123,7 @@ createdAt: ${now}
 status: draft
 difficulty: ${difficultyResult.difficulty}
 linkedTasks: []
+relatedAnswers: [${relatedAnswers.map(a => `"${a}"`).join(", ")}]
 ---
 
 # ${title}
@@ -140,6 +145,7 @@ ${description}
 
 ## 참고 사항
 (Opus가 계획 수립 시 작성)
+${relatedAnswers.length > 0 ? `\n## 관련 Q&A\n${relatedAnswers.map(a => `- ${a}`).join("\n")}` : ""}
 `;
     const filePath = path.join(getZAgentRoot(), "plans", `${planId}.md`);
     fs.writeFileSync(filePath, content, "utf-8");
@@ -263,6 +269,169 @@ function linkPlanToTask(planId, taskId) {
     content = content.replace(/status: (draft|ready)/, "status: in_progress");
     fs.writeFileSync(filePath, content, "utf-8");
     return true;
+}
+// Get a specific answer by ID
+function getAnswer(answerId) {
+    const filePath = path.join(getZAgentRoot(), "answers", `${answerId}.md`);
+    if (!fs.existsSync(filePath)) {
+        return { answer: null, content: "" };
+    }
+    const fileContent = fs.readFileSync(filePath, "utf-8");
+    const questionMatch = fileContent.match(/question:\s*"(.+?)"/);
+    const summaryMatch = fileContent.match(/summary:\s*"(.+?)"/);
+    const createdAtMatch = fileContent.match(/createdAt:\s*(.+)/);
+    const relatedLessonsMatch = fileContent.match(/relatedLessons:\s*\[(.*)\]/);
+    const relatedFilesMatch = fileContent.match(/relatedFiles:\s*\[(.*)\]/);
+    const relatedPlansMatch = fileContent.match(/relatedPlans:\s*\[(.*)\]/);
+    const relatedTasksMatch = fileContent.match(/relatedTasks:\s*\[(.*)\]/);
+    // Extract full answer from content
+    const answerSection = fileContent.match(/# 답변\n([\s\S]*?)(?=\n# |$)/);
+    const answer = {
+        answerId,
+        question: questionMatch?.[1] || "",
+        summary: summaryMatch?.[1] || "",
+        createdAt: createdAtMatch?.[1] || "",
+        relatedLessons: relatedLessonsMatch?.[1]
+            ? relatedLessonsMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean)
+            : [],
+        relatedFiles: relatedFilesMatch?.[1]
+            ? relatedFilesMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean)
+            : [],
+        relatedPlans: relatedPlansMatch?.[1]
+            ? relatedPlansMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean)
+            : [],
+        relatedTasks: relatedTasksMatch?.[1]
+            ? relatedTasksMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean)
+            : [],
+    };
+    return { answer, content: fileContent };
+}
+// Link an answer to a plan (bidirectional)
+function linkAnswerToPlan(answerId, planId) {
+    const answerPath = path.join(getZAgentRoot(), "answers", `${answerId}.md`);
+    const planPath = path.join(getZAgentRoot(), "plans", `${planId}.md`);
+    if (!fs.existsSync(answerPath) || !fs.existsSync(planPath)) {
+        return false;
+    }
+    // Update answer's relatedPlans
+    let answerContent = fs.readFileSync(answerPath, "utf-8");
+    const answerPlansMatch = answerContent.match(/relatedPlans:\s*\[(.*)\]/);
+    if (answerPlansMatch) {
+        const existing = answerPlansMatch[1]
+            ? answerPlansMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean)
+            : [];
+        if (!existing.includes(planId)) {
+            existing.push(planId);
+            const newPlans = existing.map((p) => `"${p}"`).join(", ");
+            answerContent = answerContent.replace(/relatedPlans:\s*\[.*\]/, `relatedPlans: [${newPlans}]`);
+            fs.writeFileSync(answerPath, answerContent, "utf-8");
+        }
+    }
+    // Update plan's relatedAnswers
+    let planContent = fs.readFileSync(planPath, "utf-8");
+    const planAnswersMatch = planContent.match(/relatedAnswers:\s*\[(.*)\]/);
+    if (planAnswersMatch) {
+        const existing = planAnswersMatch[1]
+            ? planAnswersMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean)
+            : [];
+        if (!existing.includes(answerId)) {
+            existing.push(answerId);
+            const newAnswers = existing.map((a) => `"${a}"`).join(", ");
+            planContent = planContent.replace(/relatedAnswers:\s*\[.*\]/, `relatedAnswers: [${newAnswers}]`);
+            fs.writeFileSync(planPath, planContent, "utf-8");
+        }
+    }
+    else {
+        // Add relatedAnswers field if it doesn't exist
+        planContent = planContent.replace(/linkedTasks:\s*\[(.*)\]/, `linkedTasks: [$1]\nrelatedAnswers: ["${answerId}"]`);
+        fs.writeFileSync(planPath, planContent, "utf-8");
+    }
+    return true;
+}
+// Link an answer to a task (bidirectional)
+function linkAnswerToTask(answerId, taskId) {
+    const answerPath = path.join(getZAgentRoot(), "answers", `${answerId}.md`);
+    const taskPath = path.join(getZAgentRoot(), "tasks", `${taskId}.md`);
+    if (!fs.existsSync(answerPath) || !fs.existsSync(taskPath)) {
+        return false;
+    }
+    // Update answer's relatedTasks
+    let answerContent = fs.readFileSync(answerPath, "utf-8");
+    const answerTasksMatch = answerContent.match(/relatedTasks:\s*\[(.*)\]/);
+    if (answerTasksMatch) {
+        const existing = answerTasksMatch[1]
+            ? answerTasksMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean)
+            : [];
+        if (!existing.includes(taskId)) {
+            existing.push(taskId);
+            const newTasks = existing.map((t) => `"${t}"`).join(", ");
+            answerContent = answerContent.replace(/relatedTasks:\s*\[.*\]/, `relatedTasks: [${newTasks}]`);
+            fs.writeFileSync(answerPath, answerContent, "utf-8");
+        }
+    }
+    // Update task's relatedAnswers (add field if not exists)
+    let taskContent = fs.readFileSync(taskPath, "utf-8");
+    const taskAnswersMatch = taskContent.match(/relatedAnswers:\s*\[(.*)\]/);
+    if (taskAnswersMatch) {
+        const existing = taskAnswersMatch[1]
+            ? taskAnswersMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean)
+            : [];
+        if (!existing.includes(answerId)) {
+            existing.push(answerId);
+            const newAnswers = existing.map((a) => `"${a}"`).join(", ");
+            taskContent = taskContent.replace(/relatedAnswers:\s*\[.*\]/, `relatedAnswers: [${newAnswers}]`);
+            fs.writeFileSync(taskPath, taskContent, "utf-8");
+        }
+    }
+    else {
+        // Add relatedAnswers field after relatedLessons
+        taskContent = taskContent.replace(/relatedLessons:\s*\[(.*)\]/, `relatedLessons: [$1]\nrelatedAnswers: ["${answerId}"]`);
+        fs.writeFileSync(taskPath, taskContent, "utf-8");
+    }
+    return true;
+}
+// Get related items for an entity (answer, plan, task)
+function getRelatedItems(entityType, entityId) {
+    const result = { answers: [], plans: [], tasks: [], lessons: [] };
+    if (entityType === "answer") {
+        const { answer } = getAnswer(entityId);
+        if (answer) {
+            result.plans = answer.relatedPlans;
+            result.tasks = answer.relatedTasks;
+            result.lessons = answer.relatedLessons;
+        }
+    }
+    else if (entityType === "plan") {
+        const { plan } = getPlan(entityId);
+        if (plan) {
+            result.tasks = plan.linkedTasks;
+            // Parse relatedAnswers from file
+            const filePath = path.join(getZAgentRoot(), "plans", `${entityId}.md`);
+            if (fs.existsSync(filePath)) {
+                const content = fs.readFileSync(filePath, "utf-8");
+                const answersMatch = content.match(/relatedAnswers:\s*\[(.*)\]/);
+                if (answersMatch?.[1]) {
+                    result.answers = answersMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean);
+                }
+            }
+        }
+    }
+    else if (entityType === "task") {
+        const { task } = getTaskStatus(entityId);
+        if (task) {
+            result.lessons = task.relatedLessons;
+            // Parse relatedAnswers from file
+            const filePath = path.join(getZAgentRoot(), "tasks", `${entityId}.md`);
+            if (fs.existsSync(filePath)) {
+                const content = fs.readFileSync(filePath, "utf-8");
+                const answersMatch = content.match(/relatedAnswers:\s*\[(.*)\]/);
+                if (answersMatch?.[1]) {
+                    result.answers = answersMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean);
+                }
+            }
+        }
+    }
+    return result;
 }
 function analyzeDifficulty(input) {
     const lowerInput = input.toLowerCase();
@@ -830,6 +999,49 @@ function listTasks(status) {
     }
     return tasks.sort((a, b) => b.taskId.localeCompare(a.taskId));
 }
+// List all answers with optional keyword filter
+function listAnswers(keyword) {
+    const answersDir = path.join(getZAgentRoot(), "answers");
+    if (!fs.existsSync(answersDir)) {
+        return [];
+    }
+    const files = fs.readdirSync(answersDir).filter((f) => f.match(/^answer-\d+\.md$/));
+    const answers = [];
+    for (const file of files) {
+        const content = fs.readFileSync(path.join(answersDir, file), "utf-8");
+        const answerId = file.replace(".md", "");
+        const questionMatch = content.match(/question:\s*"(.+?)"/);
+        const summaryMatch = content.match(/summary:\s*"(.+?)"/);
+        const createdAtMatch = content.match(/createdAt:\s*(.+)/);
+        const relatedLessonsMatch = content.match(/relatedLessons:\s*\[(.*)\]/);
+        const relatedFilesMatch = content.match(/relatedFiles:\s*\[(.*)\]/);
+        const question = questionMatch?.[1] || "";
+        const summary = summaryMatch?.[1] || "";
+        // Apply keyword filter
+        if (keyword) {
+            const lowerKeyword = keyword.toLowerCase();
+            if (!question.toLowerCase().includes(lowerKeyword) &&
+                !summary.toLowerCase().includes(lowerKeyword)) {
+                continue;
+            }
+        }
+        const relatedLessons = relatedLessonsMatch?.[1]
+            ? relatedLessonsMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean)
+            : [];
+        const relatedFiles = relatedFilesMatch?.[1]
+            ? relatedFilesMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean)
+            : [];
+        answers.push({
+            answerId,
+            question,
+            summary,
+            createdAt: createdAtMatch?.[1] || "",
+            relatedLessons,
+            relatedFiles,
+        });
+    }
+    return answers.sort((a, b) => b.answerId.localeCompare(a.answerId));
+}
 // List all lessons with optional category filter
 function listLessons(category) {
     const lessonsDir = path.join(getZAgentRoot(), "lessons");
@@ -861,7 +1073,7 @@ function listLessons(category) {
     }
     return lessons.sort((a, b) => b.lessonId.localeCompare(a.lessonId));
 }
-// Unified query for tasks, plans, and lessons
+// Unified query for tasks, plans, lessons, and answers
 function queryAll(options) {
     const { type = "all", keyword, status, category } = options;
     const result = {
@@ -869,6 +1081,7 @@ function queryAll(options) {
             taskCount: 0,
             planCount: 0,
             lessonCount: 0,
+            answerCount: 0,
         },
     };
     // Get tasks
@@ -918,6 +1131,12 @@ function queryAll(options) {
         }
         result.lessons = lessons;
         result.summary.lessonCount = lessons.length;
+    }
+    // Get answers
+    if (type === "all" || type === "answers") {
+        const answers = listAnswers(keyword);
+        result.answers = answers;
+        result.summary.answerCount = answers.length;
     }
     return result;
 }
@@ -1223,7 +1442,7 @@ const tools = [
     },
     {
         name: "z_create_plan",
-        description: "새로운 Plan을 생성합니다. /planning 명령어에서 사용됩니다.",
+        description: "새로운 Plan을 생성합니다. /planning 명령어에서 사용됩니다. Answer를 참조하여 계획을 수립할 수 있습니다.",
         inputSchema: {
             type: "object",
             properties: {
@@ -1234,6 +1453,11 @@ const tools = [
                 description: {
                     type: "string",
                     description: "Plan 설명",
+                },
+                relatedAnswers: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "참조할 Answer ID 목록 (예: answer-001). /ask 결과를 기반으로 계획 수립 시 사용",
                 },
             },
             required: ["title", "description"],
@@ -1345,14 +1569,28 @@ const tools = [
         },
     },
     {
+        name: "z_list_answers",
+        description: "저장된 Q&A 답변 목록을 조회합니다. 키워드로 필터링할 수 있습니다.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                keyword: {
+                    type: "string",
+                    description: "검색 키워드 (선택사항, 질문/요약에서 검색)",
+                },
+            },
+            required: [],
+        },
+    },
+    {
         name: "z_query",
-        description: "Task, Plan, Lesson을 통합 검색합니다. /list 명령어에서 사용됩니다.",
+        description: "Task, Plan, Lesson, Answer를 통합 검색합니다. /list 명령어에서 사용됩니다.",
         inputSchema: {
             type: "object",
             properties: {
                 type: {
                     type: "string",
-                    enum: ["all", "tasks", "plans", "lessons"],
+                    enum: ["all", "tasks", "plans", "lessons", "answers"],
                     description: "검색 대상 (기본값: all)",
                 },
                 keyword: {
@@ -1373,7 +1611,7 @@ const tools = [
     },
     {
         name: "z_save_answer",
-        description: "질문에 대한 답변을 파일로 저장하고 요약만 반환합니다. /ask 명령어에서 context 절약을 위해 사용됩니다.",
+        description: "질문에 대한 답변을 저장하고 요약만 반환합니다. Context 절약을 위해 answer_file_path를 사용하세요 - Write 툴로 먼저 .z-agent/temp/answer_draft.md에 답변을 저장한 후 파일 경로만 전달하면 됩니다.",
         inputSchema: {
             type: "object",
             properties: {
@@ -1381,9 +1619,13 @@ const tools = [
                     type: "string",
                     description: "사용자의 원래 질문",
                 },
+                answer_file_path: {
+                    type: "string",
+                    description: "답변이 저장된 파일 경로 (권장). Context 절약을 위해 answer 대신 사용하세요.",
+                },
                 answer: {
                     type: "string",
-                    description: "전체 답변 내용",
+                    description: "전체 답변 내용 (비권장 - Context 소모가 큼. answer_file_path 사용 권장)",
                 },
                 summary: {
                     type: "string",
@@ -1399,8 +1641,87 @@ const tools = [
                     items: { type: "string" },
                     description: "참조한 파일 목록",
                 },
+                relatedPlans: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "관련 Plan ID 목록 (예: PLAN-001)",
+                },
+                relatedTasks: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "관련 Task ID 목록 (예: task-001)",
+                },
             },
-            required: ["question", "answer", "summary"],
+            required: ["question", "summary"],
+        },
+    },
+    {
+        name: "z_get_answer",
+        description: "특정 Answer의 상세 내용을 조회합니다. 관련된 Plan, Task, Lesson 참조 정보도 포함됩니다.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                answerId: {
+                    type: "string",
+                    description: "Answer ID (예: answer-001)",
+                },
+            },
+            required: ["answerId"],
+        },
+    },
+    {
+        name: "z_link_answer_to_plan",
+        description: "Answer와 Plan을 양방향으로 연결합니다. /ask 결과를 /planning에서 참조할 때 사용합니다.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                answerId: {
+                    type: "string",
+                    description: "Answer ID (예: answer-001)",
+                },
+                planId: {
+                    type: "string",
+                    description: "Plan ID (예: PLAN-001)",
+                },
+            },
+            required: ["answerId", "planId"],
+        },
+    },
+    {
+        name: "z_link_answer_to_task",
+        description: "Answer와 Task를 양방향으로 연결합니다. /ask 결과를 /task에서 참조할 때 사용합니다.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                answerId: {
+                    type: "string",
+                    description: "Answer ID (예: answer-001)",
+                },
+                taskId: {
+                    type: "string",
+                    description: "Task ID (예: task-001)",
+                },
+            },
+            required: ["answerId", "taskId"],
+        },
+    },
+    {
+        name: "z_get_related",
+        description: "특정 엔티티(Answer, Plan, Task)와 연결된 모든 관련 항목을 조회합니다.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                entityType: {
+                    type: "string",
+                    enum: ["answer", "plan", "task"],
+                    description: "엔티티 유형",
+                },
+                entityId: {
+                    type: "string",
+                    description: "엔티티 ID (예: answer-001, PLAN-001, task-001)",
+                },
+            },
+            required: ["entityType", "entityId"],
         },
     },
 ];
@@ -1635,7 +1956,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 };
             }
             case "z_create_plan": {
-                const result = createPlan(args.title, args.description);
+                const relatedAnswers = args.relatedAnswers || [];
+                const result = createPlan(args.title, args.description, relatedAnswers);
+                // Bidirectionally link answers to plan
+                for (const answerId of relatedAnswers) {
+                    linkAnswerToPlan(answerId, result.planId);
+                }
                 return {
                     content: [
                         {
@@ -1643,7 +1969,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                             text: JSON.stringify({
                                 planId: result.planId,
                                 filePath: result.filePath,
-                                message: `✅ ${result.planId} 생성됨`,
+                                relatedAnswers: relatedAnswers.length > 0 ? relatedAnswers : undefined,
+                                message: `✅ ${result.planId} 생성됨${relatedAnswers.length > 0 ? ` (${relatedAnswers.join(", ")} 참조)` : ""}`,
                             }, null, 2),
                         },
                     ],
@@ -1789,6 +2116,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     ],
                 };
             }
+            case "z_list_answers": {
+                const answers = listAnswers(args.keyword);
+                if (answers.length === 0) {
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text: args.keyword
+                                    ? `"${args.keyword}" 검색 결과가 없습니다.`
+                                    : "저장된 Q&A 답변이 없습니다.",
+                            },
+                        ],
+                    };
+                }
+                const header = `## Q&A 답변 (${answers.length}개)${args.keyword ? ` - "${args.keyword}" 검색` : ""}\n\n`;
+                const table = answers
+                    .map((a) => {
+                    return `| ${a.answerId} | ${a.question.slice(0, 40)}${a.question.length > 40 ? "..." : ""} | ${a.summary.slice(0, 40)}${a.summary.length > 40 ? "..." : ""} |`;
+                })
+                    .join("\n");
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: header + "| ID | 질문 | 요약 |\n|---|---|---|\n" + table,
+                        },
+                    ],
+                };
+            }
             case "z_query": {
                 const result = queryAll({
                     type: args.type || "all",
@@ -1815,7 +2171,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     output += ` (${statusParts})`;
                 }
                 output += "\n";
-                output += `- Lessons: ${result.summary.lessonCount}개\n\n`;
+                output += `- Lessons: ${result.summary.lessonCount}개\n`;
+                output += `- Answers: ${result.summary.answerCount}개\n\n`;
                 // Tasks
                 if (result.tasks && result.tasks.length > 0) {
                     output += "### Tasks\n";
@@ -1848,6 +2205,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     if (result.lessons.length > 10) {
                         output += `  ... 외 ${result.lessons.length - 10}개\n`;
                     }
+                    output += "\n";
+                }
+                // Answers
+                if (result.answers && result.answers.length > 0) {
+                    output += "### Q&A Answers\n";
+                    for (const a of result.answers.slice(0, 10)) {
+                        output += `- ${a.answerId}: ${a.question.slice(0, 30)}... → ${a.summary.slice(0, 30)}\n`;
+                    }
+                    if (result.answers.length > 10) {
+                        output += `  ... 외 ${result.answers.length - 10}개\n`;
+                    }
                 }
                 return {
                     content: [
@@ -1859,16 +2227,124 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 };
             }
             case "z_save_answer": {
-                const result = saveAnswer(args.question, args.answer, args.summary, args.relatedLessons || [], args.relatedFiles || []);
+                // answer_file_path가 있으면 파일에서 읽고, 없으면 answer 사용
+                let answerContent;
+                if (args.answer_file_path) {
+                    try {
+                        answerContent = fs.readFileSync(args.answer_file_path, "utf-8");
+                    }
+                    catch {
+                        return {
+                            content: [{ type: "text", text: `❌ 파일을 읽을 수 없습니다: ${args.answer_file_path}` }],
+                        };
+                    }
+                }
+                else if (args.answer) {
+                    answerContent = args.answer;
+                }
+                else {
+                    return {
+                        content: [{ type: "text", text: "❌ answer 또는 answer_file_path가 필요합니다." }],
+                    };
+                }
+                const result = saveAnswer(args.question, answerContent, args.summary, args.relatedLessons || [], args.relatedFiles || [], args.relatedPlans || [], args.relatedTasks || []);
+                // 임시 파일 삭제
+                if (args.answer_file_path) {
+                    try {
+                        fs.unlinkSync(args.answer_file_path);
+                    }
+                    catch {
+                        // 삭제 실패해도 무시
+                    }
+                }
                 return {
                     content: [
                         {
                             type: "text",
-                            text: `## 답변 요약
-
-${result.summary}
-
-📁 상세 내용: .z-agent/answers/${result.answerId}.md`,
+                            text: `✅ ${result.answerId} 저장됨\n📝 ${result.summary}`,
+                        },
+                    ],
+                };
+            }
+            case "z_get_answer": {
+                const result = getAnswer(args.answerId);
+                if (!result.answer) {
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text: `❌ Answer 없음: ${args.answerId}`,
+                            },
+                        ],
+                        isError: true,
+                    };
+                }
+                const related = getRelatedItems("answer", args.answerId);
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: JSON.stringify({
+                                answer: result.answer,
+                                relatedItems: related,
+                                content: result.content,
+                            }, null, 2),
+                        },
+                    ],
+                };
+            }
+            case "z_link_answer_to_plan": {
+                const success = linkAnswerToPlan(args.answerId, args.planId);
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: success
+                                ? `✅ ${args.answerId} ↔ ${args.planId} 연결됨`
+                                : `❌ 연결 실패: ${args.answerId} 또는 ${args.planId}를 찾을 수 없음`,
+                        },
+                    ],
+                    isError: !success,
+                };
+            }
+            case "z_link_answer_to_task": {
+                const success = linkAnswerToTask(args.answerId, args.taskId);
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: success
+                                ? `✅ ${args.answerId} ↔ ${args.taskId} 연결됨`
+                                : `❌ 연결 실패: ${args.answerId} 또는 ${args.taskId}를 찾을 수 없음`,
+                        },
+                    ],
+                    isError: !success,
+                };
+            }
+            case "z_get_related": {
+                const related = getRelatedItems(args.entityType, args.entityId);
+                let output = `## ${args.entityId} 관련 항목\n\n`;
+                if (related.answers.length > 0) {
+                    output += `### 연결된 Answers\n${related.answers.map(a => `- ${a}`).join("\n")}\n\n`;
+                }
+                if (related.plans.length > 0) {
+                    output += `### 연결된 Plans\n${related.plans.map(p => `- ${p}`).join("\n")}\n\n`;
+                }
+                if (related.tasks.length > 0) {
+                    output += `### 연결된 Tasks\n${related.tasks.map(t => `- ${t}`).join("\n")}\n\n`;
+                }
+                if (related.lessons.length > 0) {
+                    output += `### 연결된 Lessons\n${related.lessons.map(l => `- ${l}`).join("\n")}\n\n`;
+                }
+                if (related.answers.length === 0 && related.plans.length === 0 &&
+                    related.tasks.length === 0 && related.lessons.length === 0) {
+                    output += "연결된 항목 없음\n";
+                }
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: output,
                         },
                     ],
                 };
