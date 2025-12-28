@@ -700,6 +700,50 @@ function analyzeDifficulty(input: string): DifficultyResult {
   }
 }
 
+function createTodoTemplateFile(
+  taskId: string,
+  todo: TodoItem,
+  createdAt: string
+): void {
+  const taskFolder = path.join(getZAgentRoot(), taskId);
+  const todoFileName = `todo-${String(todo.index).padStart(3, "0")}.md`;
+  const todoFilePath = path.join(taskFolder, todoFileName);
+
+  const content = `---
+todoId: ${todo.index}
+taskId: ${taskId}
+description: ${todo.description}
+difficulty: ${todo.difficulty}
+status: ${todo.status}
+createdAt: ${createdAt}
+updatedAt: ${createdAt}
+---
+# TODO #${todo.index}: ${todo.description}
+
+**난이도**: ${todo.difficulty} | **상태**: ${STATUS_EMOJI[todo.status]} ${todo.status}
+
+---
+
+## Progress Log
+
+(진행 내역이 여기에 기록됨)
+
+---
+
+## Changed Files
+
+(변경된 파일 목록)
+
+---
+
+## Notes
+
+(추가 메모)
+`;
+
+  fs.writeFileSync(todoFilePath, content, "utf-8");
+}
+
 function createTaskFile(
   taskId: string,
   description: string,
@@ -736,7 +780,42 @@ ${todoList}
     fs.mkdirSync(taskFolder, { recursive: true });
   }
 
+  // Create individual TODO template files
+  for (const todo of todos) {
+    createTodoTemplateFile(taskId, todo, now);
+  }
+
   return filePath;
+}
+
+function updateTodoFile(
+  taskId: string,
+  todoIndex: number,
+  newStatus: string
+): boolean {
+  const todoFileName = `todo-${String(todoIndex).padStart(3, "0")}.md`;
+  const todoFilePath = path.join(getZAgentRoot(), taskId, todoFileName);
+
+  if (!fs.existsSync(todoFilePath)) {
+    return false;
+  }
+
+  const now = new Date().toISOString();
+  let content = fs.readFileSync(todoFilePath, "utf-8");
+  const emoji = STATUS_EMOJI[newStatus] || "⏳";
+
+  // Update status in frontmatter
+  content = content.replace(/^status: .+$/m, `status: ${newStatus}`);
+  content = content.replace(/^updatedAt: .+$/m, `updatedAt: ${now}`);
+
+  // Update status display line
+  content = content.replace(
+    /\*\*상태\*\*: [⏳🔄✅❌🚫] \w+/,
+    `**상태**: ${emoji} ${newStatus}`
+  );
+
+  fs.writeFileSync(todoFilePath, content, "utf-8");
+  return true;
 }
 
 function updateTodoStatus(
@@ -752,18 +831,24 @@ function updateTodoStatus(
 
   let content = fs.readFileSync(filePath, "utf-8");
   const lines = content.split("\n");
+  let updated = false;
 
   for (let i = 0; i < lines.length; i++) {
     const match = lines[i].match(/^([⏳🔄✅❌🚫])\s*-\s*(\d+)\.\s*(.+?)\s*\(([HML])\)\s*$/);
     if (match && parseInt(match[2]) === todoIndex) {
       const emoji = STATUS_EMOJI[newStatus] || "⏳";
       lines[i] = `${emoji} - ${match[2]}. ${match[3]} (${match[4]})`;
+      updated = true;
       break;
     }
   }
 
-  fs.writeFileSync(filePath, lines.join("\n"), "utf-8");
-  return true;
+  if (updated) {
+    fs.writeFileSync(filePath, lines.join("\n"), "utf-8");
+    // Also update the individual TODO file
+    updateTodoFile(taskId, todoIndex, newStatus);
+  }
+  return updated;
 }
 
 function getTaskStatus(taskId: string): { task: TaskMeta | null; todos: TodoItem[] } {
