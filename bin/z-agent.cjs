@@ -169,7 +169,7 @@ function init() {
 
 function setupMcpConfig() {
   const os = require('os');
-  const claudeJsonPath = path.join(TARGET_DIR, '.claude.json');
+  const homeDir = os.homedir();
   const isWindows = process.platform === 'win32';
 
   // Create platform-specific MCP config
@@ -186,40 +186,49 @@ function setupMcpConfig() {
     };
   }
 
-  // Read existing config or create new
-  let config = {};
-  if (fs.existsSync(claudeJsonPath)) {
-    try {
-      const content = fs.readFileSync(claudeJsonPath, 'utf-8');
-      config = JSON.parse(content);
-    } catch (e) {
-      log('  warning: could not parse existing .claude.json, creating new', 'yellow');
+  // Update both project and home directory configs
+  const configPaths = [
+    { path: path.join(TARGET_DIR, '.claude.json'), name: 'project' },
+    { path: path.join(homeDir, '.claude.json'), name: 'home' }
+  ];
+
+  for (const { path: claudeJsonPath, name } of configPaths) {
+    // Read existing config or create new
+    let config = {};
+    if (fs.existsSync(claudeJsonPath)) {
+      try {
+        const content = fs.readFileSync(claudeJsonPath, 'utf-8');
+        config = JSON.parse(content);
+      } catch (e) {
+        log(`  warning: could not parse ${name} .claude.json, creating new`, 'yellow');
+      }
     }
-  }
 
-  // Merge MCP servers config
-  if (!config.mcpServers) {
-    config.mcpServers = {};
-  }
-
-  const existingConfig = config.mcpServers['z-agent'];
-  if (existingConfig) {
-    // Check if config is different
-    const existingStr = JSON.stringify(existingConfig);
-    const newStr = JSON.stringify(mcpConfig);
-    if (existingStr === newStr) {
-      log('  z-agent MCP config already up to date', 'dim');
-      return;
+    // Merge MCP servers config
+    if (!config.mcpServers) {
+      config.mcpServers = {};
     }
-    log('  updating z-agent MCP config', 'green');
-  } else {
-    log('  adding z-agent MCP config', 'green');
+
+    const existingConfig = config.mcpServers['z-agent'];
+    if (existingConfig) {
+      // Check if config is different
+      const existingStr = JSON.stringify(existingConfig);
+      const newStr = JSON.stringify(mcpConfig);
+      if (existingStr === newStr) {
+        log(`  [${name}] z-agent MCP config already up to date`, 'dim');
+        continue;
+      }
+      log(`  [${name}] updating z-agent MCP config`, 'green');
+    } else {
+      log(`  [${name}] adding z-agent MCP config`, 'green');
+    }
+
+    config.mcpServers['z-agent'] = mcpConfig;
+
+    // Write config
+    fs.writeFileSync(claudeJsonPath, JSON.stringify(config, null, 2), 'utf-8');
   }
 
-  config.mcpServers['z-agent'] = mcpConfig;
-
-  // Write config
-  fs.writeFileSync(claudeJsonPath, JSON.stringify(config, null, 2), 'utf-8');
   log(`  platform: ${isWindows ? 'Windows' : 'Unix'}`, 'dim');
 }
 
