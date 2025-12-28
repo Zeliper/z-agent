@@ -1,0 +1,46 @@
+{
+  "name": "z-agent",
+  "version": "0.1.0",
+  "description": "Claude Code MCP server for session context management, workflow management, and Lessons Learned system",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "z-agent": "./bin/z-agent.cjs"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "mcp",
+    "ai",
+    "agent",
+    "workflow",
+    "session-management"
+  ],
+  "author": "Zeliper",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Zeliper/z-agent.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "template/"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
