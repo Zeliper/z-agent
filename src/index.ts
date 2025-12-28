@@ -492,6 +492,117 @@ ${details}
   return filePath;
 }
 
+// File operation functions - return minimal output for context efficiency
+function writeFile(filePath: string, content: string): { success: boolean; message: string } {
+  try {
+    const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
+    const dir = path.dirname(absolutePath);
+
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    fs.writeFileSync(absolutePath, content, "utf-8");
+    const lines = content.split("\n").length;
+
+    return {
+      success: true,
+      message: `✅ ${filePath} 생성됨 (${lines}줄)`,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ 파일 생성 실패: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+function editFile(
+  filePath: string,
+  oldString: string,
+  newString: string,
+  replaceAll: boolean = false
+): { success: boolean; message: string; replacements: number } {
+  try {
+    const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
+
+    if (!fs.existsSync(absolutePath)) {
+      return {
+        success: false,
+        message: `❌ 파일 없음: ${filePath}`,
+        replacements: 0,
+      };
+    }
+
+    let content = fs.readFileSync(absolutePath, "utf-8");
+
+    if (!content.includes(oldString)) {
+      return {
+        success: false,
+        message: `❌ 일치하는 문자열 없음`,
+        replacements: 0,
+      };
+    }
+
+    let replacements = 0;
+    if (replaceAll) {
+      const regex = new RegExp(oldString.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
+      replacements = (content.match(regex) || []).length;
+      content = content.replace(regex, newString);
+    } else {
+      replacements = 1;
+      content = content.replace(oldString, newString);
+    }
+
+    fs.writeFileSync(absolutePath, content, "utf-8");
+
+    return {
+      success: true,
+      message: `✅ ${filePath} 수정됨 (${replacements}개 교체)`,
+      replacements,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ 파일 수정 실패: ${error instanceof Error ? error.message : String(error)}`,
+      replacements: 0,
+    };
+  }
+}
+
+function readFile(filePath: string, offset?: number, limit?: number): { success: boolean; content?: string; message: string; lines?: number } {
+  try {
+    const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
+
+    if (!fs.existsSync(absolutePath)) {
+      return {
+        success: false,
+        message: `❌ 파일 없음: ${filePath}`,
+      };
+    }
+
+    const content = fs.readFileSync(absolutePath, "utf-8");
+    const allLines = content.split("\n");
+    const totalLines = allLines.length;
+
+    const startLine = offset || 0;
+    const endLine = limit ? startLine + limit : totalLines;
+    const selectedLines = allLines.slice(startLine, endLine);
+
+    return {
+      success: true,
+      content: selectedLines.join("\n"),
+      message: `✅ ${filePath} 읽기 완료`,
+      lines: totalLines,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ 파일 읽기 실패: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
 function generateTaskSummary(taskId: string): string {
   const { task, todos } = getTaskStatus(taskId);
 
@@ -714,6 +825,72 @@ const tools: Tool[] = [
       required: ["taskId"],
     },
   },
+  {
+    name: "z_write_file",
+    description: "파일을 생성합니다. 코드 내용은 context에 포함되지 않고 간결한 결과만 반환합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        filePath: {
+          type: "string",
+          description: "생성할 파일 경로 (절대 경로 또는 상대 경로)",
+        },
+        content: {
+          type: "string",
+          description: "파일 내용",
+        },
+      },
+      required: ["filePath", "content"],
+    },
+  },
+  {
+    name: "z_edit_file",
+    description: "파일의 특정 부분을 수정합니다. 코드 내용은 context에 포함되지 않고 간결한 결과만 반환합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        filePath: {
+          type: "string",
+          description: "수정할 파일 경로",
+        },
+        oldString: {
+          type: "string",
+          description: "교체할 기존 문자열",
+        },
+        newString: {
+          type: "string",
+          description: "새로운 문자열",
+        },
+        replaceAll: {
+          type: "boolean",
+          description: "모든 일치 항목을 교체할지 여부 (기본값: false)",
+        },
+      },
+      required: ["filePath", "oldString", "newString"],
+    },
+  },
+  {
+    name: "z_read_file",
+    description: "파일 내용을 읽습니다. Sub Agent가 파일을 분석할 때 사용합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        filePath: {
+          type: "string",
+          description: "읽을 파일 경로",
+        },
+        offset: {
+          type: "number",
+          description: "시작 줄 번호 (0부터 시작, 선택사항)",
+        },
+        limit: {
+          type: "number",
+          description: "읽을 줄 수 (선택사항)",
+        },
+      },
+      required: ["filePath"],
+    },
+  },
 ];
 
 // Create server
@@ -933,6 +1110,59 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: summary,
             },
           ],
+        };
+      }
+
+      case "z_write_file": {
+        const result = writeFile(
+          args.filePath as string,
+          args.content as string
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: result.message,
+            },
+          ],
+          isError: !result.success,
+        };
+      }
+
+      case "z_edit_file": {
+        const result = editFile(
+          args.filePath as string,
+          args.oldString as string,
+          args.newString as string,
+          (args.replaceAll as boolean) || false
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: result.message,
+            },
+          ],
+          isError: !result.success,
+        };
+      }
+
+      case "z_read_file": {
+        const result = readFile(
+          args.filePath as string,
+          args.offset as number | undefined,
+          args.limit as number | undefined
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: result.success
+                ? result.content!
+                : result.message,
+            },
+          ],
+          isError: !result.success,
         };
       }
 
