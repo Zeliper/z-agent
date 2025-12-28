@@ -23,6 +23,9 @@
 - ✅ z_list_dir
 - ✅ z_glob
 - ✅ z_read_file
+- ✅ z_list_tasks (Task 목록 조회)
+- ✅ z_list_lessons (Lesson 목록 조회)
+- ✅ z_query (통합 검색)
 
 ## 실행 흐름
 

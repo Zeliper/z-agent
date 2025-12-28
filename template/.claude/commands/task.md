@@ -32,6 +32,10 @@
 - ✅ z_edit_file
 - ✅ z_get_plan (Plan 연계 시)
 - ✅ z_link_plan_to_task (Plan 연계 시)
+- ✅ z_list_tasks (Task 목록 조회)
+- ✅ z_list_lessons (Lesson 목록 조회)
+- ✅ z_list_plans (Plan 목록 조회)
+- ✅ z_query (통합 검색)
 
 ## 실행 흐름
 
