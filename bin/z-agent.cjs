@@ -49,8 +49,59 @@ function copyDir(src, dest, options = {}) {
   }
 }
 
+function clearZAgentCache() {
+  const os = require('os');
+  const homeDir = os.homedir();
+  const npxCacheDir = path.join(homeDir, '.npm', '_npx');
+
+  if (!fs.existsSync(npxCacheDir)) {
+    return 0;
+  }
+
+  let cleared = 0;
+  const entries = fs.readdirSync(npxCacheDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+
+    const pkgJsonPath = path.join(npxCacheDir, entry.name, 'node_modules', 'z-agent', 'package.json');
+    const pkgJsonAltPath = path.join(npxCacheDir, entry.name, 'node_modules', '.package-lock.json');
+
+    let isZAgent = false;
+
+    // Check if this cache contains z-agent
+    if (fs.existsSync(pkgJsonPath)) {
+      isZAgent = true;
+    } else if (fs.existsSync(pkgJsonAltPath)) {
+      try {
+        const lockContent = fs.readFileSync(pkgJsonAltPath, 'utf-8');
+        if (lockContent.includes('z-agent') || lockContent.includes('Zeliper/z-agent')) {
+          isZAgent = true;
+        }
+      } catch (e) {}
+    }
+
+    if (isZAgent) {
+      const cachePath = path.join(npxCacheDir, entry.name);
+      fs.rmSync(cachePath, { recursive: true, force: true });
+      cleared++;
+    }
+  }
+
+  return cleared;
+}
+
 function init() {
   log('\n🚀 z-agent setup\n', 'blue');
+
+  // 0. Clear z-agent npx cache
+  log('🧹 Clearing z-agent cache...', 'blue');
+  const cleared = clearZAgentCache();
+  if (cleared > 0) {
+    log(`  cleared ${cleared} cached package(s)`, 'green');
+  } else {
+    log('  no cache found', 'dim');
+  }
 
   // 1. Copy .z-agent folder
   const zAgentSrc = path.join(TEMPLATE_DIR, '.z-agent');
