@@ -1,6 +1,7 @@
 # /task Command
 
 사용자가 작업을 요청할 때 사용하는 z-agent 명령어입니다.
+`/task PLAN-XXX` 형식으로 Plan을 기반으로 작업을 시작할 수 있습니다.
 
 ## 중요: 도구 사용 규칙
 
@@ -29,23 +30,27 @@
 - ✅ z_read_file
 - ✅ z_write_file
 - ✅ z_edit_file
+- ✅ z_get_plan (Plan 연계 시)
+- ✅ z_link_plan_to_task (Plan 연계 시)
 
 ## 실행 흐름
 
-### 1. 난이도 분석
+### A. 일반 Task (기존 방식)
+
+#### 1. 난이도 분석
 ```
 z_analyze_difficulty(input: "사용자 입력")
 → difficulty: H/M/L
 → suggestedModel: opus/sonnet/haiku
 ```
 
-### 2. 관련 Lesson 검색
+#### 2. 관련 Lesson 검색
 ```
 z_search_lessons(query: "핵심 키워드")
 → 관련 lessons 참조
 ```
 
-### 3. Task 생성
+#### 3. Task 생성
 ```
 z_create_task(
   description: "작업 요약",
@@ -57,7 +62,33 @@ z_create_task(
 → taskId, filePath
 ```
 
-### 4. 각 TODO 처리
+### B. Plan 기반 Task (PLAN-XXX 지정 시)
+
+#### 1. Plan 조회
+```
+사용자: /task PLAN-001 시작해줘
+
+z_get_plan(planId: "PLAN-001")
+→ plan.todos, plan.title, plan.description
+```
+
+#### 2. Task 생성 (Plan 기반)
+```
+z_create_task(
+  description: plan.title,
+  todos: plan.todos  ← Plan의 TODO 목록 사용
+)
+→ taskId: task-001
+```
+
+#### 3. Plan-Task 연결
+```
+z_link_plan_to_task(planId: "PLAN-001", taskId: "task-001")
+→ Plan 상태가 in_progress로 변경
+→ Plan의 linkedTasks에 task-001 추가
+```
+
+### 공통: TODO 처리
 ```
 for each TODO:
   a. z_update_todo(taskId, todoIndex, "in_progress")
@@ -73,16 +104,10 @@ for each TODO:
   e. z_update_todo(taskId, todoIndex, "complete")
 ```
 
-### 5. 최종 요약
+### 최종 요약
 ```
 z_generate_summary(taskId)
 → 간결한 요약만 출력 (context 절약)
-```
-
-### 6. Lesson 기록 (선택)
-```
-z_record_lesson(category, problem, solution, tags)
-→ 새로운 패턴/해결책 발견 시
 ```
 
 ## 파일 작업 시
@@ -103,7 +128,54 @@ z_edit_file("src/main.ts", oldString, newString)
 **주의: Edit/Write tool 대신 z_write_file/z_edit_file 사용**
 → context에 코드 내용이 포함되지 않음
 
-## 예시
+## 예시: Plan 기반 Task
+
+```
+사용자: /task PLAN-001 시작해줘
+
+1. z_get_plan("PLAN-001")
+   → title: "마이크로서비스 전환"
+   → todos: [
+       { description: "현재 의존성 분석", difficulty: "M" },
+       { description: "분리 가능한 모듈 식별", difficulty: "H" },
+       ...
+     ]
+
+2. z_create_task(
+     description: "마이크로서비스 전환",
+     todos: plan.todos
+   )
+   → task-001
+
+3. z_link_plan_to_task("PLAN-001", "task-001")
+   → ✅ 연결됨
+
+4. TODO 순차 처리...
+   - z_update_todo("task-001", 1, "in_progress")
+   - z_get_agent_prompt("M", "현재 의존성 분석")
+   - Task tool로 sonnet에 위임
+   - z_save_todo_result(...)
+   - z_update_todo("task-001", 1, "complete")
+   - ...
+
+5. z_generate_summary("task-001")
+   → 완료 요약
+
+## Task [task-001] 완료
+
+### 요약
+PLAN-001 기반 마이크로서비스 전환 완료
+
+### 완료 항목
+- ✅ TODO #1: 현재 의존성 분석
+- ✅ TODO #2: 분리 가능한 모듈 식별
+...
+
+### 연결된 Plan
+📁 .z-agent/plans/PLAN-001.md
+```
+
+## 예시: 일반 Task
 
 ```
 사용자: /task 버그 수정해줘
@@ -115,7 +187,7 @@ z_edit_file("src/main.ts", oldString, newString)
    → lesson-002 참조
 
 3. z_create_task("버그 수정", todos=[...])
-   → task-001
+   → task-002
 
 4. z_list_dir("src", recursive=true)
    → 파일 구조 파악
@@ -127,12 +199,13 @@ z_edit_file("src/main.ts", oldString, newString)
    → ✅ 수정 완료
 
 7. z_save_todo_result(...)
-8. z_generate_summary("task-001")
+8. z_generate_summary("task-002")
 ```
 
 ## 주의사항
 
 - **z_* MCP 도구만 사용** (기본 도구 금지)
+- `PLAN-XXX` 입력 시 해당 Plan 기반으로 Task 생성
 - 세션 컨텍스트 최소화: 상세 내용은 파일에 저장
 - 에러 발생 시 사용자에게 선택지 제공
 - `.z-agent/`와 `.claude/` 폴더는 프로젝트 분석 시 제외

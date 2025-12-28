@@ -42,6 +42,20 @@ interface LessonMeta {
   summary: string;
 }
 
+interface PlanMeta {
+  planId: string;
+  title: string;
+  description: string;
+  createdAt: string;
+  status: "draft" | "ready" | "in_progress" | "completed" | "cancelled";
+  difficulty: "H" | "M" | "L";
+  linkedTasks: string[];
+  todos: Array<{
+    description: string;
+    difficulty: "H" | "M" | "L";
+  }>;
+}
+
 // Constants
 const STATUS_EMOJI: Record<string, string> = {
   pending: "⏳",
@@ -66,7 +80,7 @@ function getZAgentRoot(): string {
 
 function ensureDirectories(): void {
   const root = getZAgentRoot();
-  const dirs = ["tasks", "lessons", "scripts", "agents", "skills", "templates"];
+  const dirs = ["tasks", "lessons", "scripts", "agents", "skills", "templates", "plans"];
 
   for (const dir of dirs) {
     const dirPath = path.join(root, dir);
@@ -108,6 +122,225 @@ function getNextLessonId(): string {
     ...files.map((f) => parseInt(f.match(/lesson-(\d+)\.md/)?.[1] || "0"))
   );
   return `lesson-${String(maxNum + 1).padStart(3, "0")}`;
+}
+
+function getNextPlanId(): string {
+  const plansDir = path.join(getZAgentRoot(), "plans");
+  if (!fs.existsSync(plansDir)) {
+    return "PLAN-001";
+  }
+
+  const files = fs.readdirSync(plansDir).filter((f) => f.match(/^PLAN-\d+\.md$/));
+  if (files.length === 0) {
+    return "PLAN-001";
+  }
+
+  const maxNum = Math.max(
+    ...files.map((f) => parseInt(f.match(/PLAN-(\d+)\.md/)?.[1] || "0"))
+  );
+  return `PLAN-${String(maxNum + 1).padStart(3, "0")}`;
+}
+
+function createPlan(title: string, description: string): { planId: string; filePath: string } {
+  const planId = getNextPlanId();
+  const now = new Date().toISOString();
+  const difficultyResult = analyzeDifficulty(description);
+
+  const content = `---
+planId: ${planId}
+title: "${title}"
+description: "${description}"
+createdAt: ${now}
+status: draft
+difficulty: ${difficultyResult.difficulty}
+linkedTasks: []
+---
+
+# ${title}
+
+## 개요
+${description}
+
+## 목표
+(Opus가 계획 수립 시 작성)
+
+## TODO 목록
+(Opus가 계획 수립 시 작성)
+
+## 구현 전략
+(Opus가 계획 수립 시 작성)
+
+## 예상 이슈
+(Opus가 계획 수립 시 작성)
+
+## 참고 사항
+(Opus가 계획 수립 시 작성)
+`;
+
+  const filePath = path.join(getZAgentRoot(), "plans", `${planId}.md`);
+  fs.writeFileSync(filePath, content, "utf-8");
+
+  return { planId, filePath };
+}
+
+function updatePlan(
+  planId: string,
+  updates: {
+    status?: string;
+    todos?: Array<{ description: string; difficulty: "H" | "M" | "L" }>;
+    content?: string;
+  }
+): boolean {
+  const filePath = path.join(getZAgentRoot(), "plans", `${planId}.md`);
+
+  if (!fs.existsSync(filePath)) {
+    return false;
+  }
+
+  let fileContent = fs.readFileSync(filePath, "utf-8");
+
+  // Update status in frontmatter
+  if (updates.status) {
+    fileContent = fileContent.replace(
+      /status: \w+/,
+      `status: ${updates.status}`
+    );
+  }
+
+  // Update todos in frontmatter and content
+  if (updates.todos && updates.todos.length > 0) {
+    const todoListMd = updates.todos
+      .map((t, i) => `${i + 1}. ${t.description} (${t.difficulty})`)
+      .join("\n");
+
+    // Replace TODO section
+    fileContent = fileContent.replace(
+      /## TODO 목록\n[\s\S]*?(?=\n## |$)/,
+      `## TODO 목록\n${todoListMd}\n\n`
+    );
+  }
+
+  // Append or replace content sections
+  if (updates.content) {
+    // Find where to insert (after frontmatter and title)
+    const frontmatterEnd = fileContent.indexOf("---", 3) + 3;
+    const titleEnd = fileContent.indexOf("\n## ", frontmatterEnd);
+
+    if (titleEnd > 0) {
+      fileContent = fileContent.substring(0, titleEnd) + "\n" + updates.content;
+    } else {
+      fileContent += "\n" + updates.content;
+    }
+  }
+
+  fs.writeFileSync(filePath, fileContent, "utf-8");
+  return true;
+}
+
+function getPlan(planId: string): { plan: PlanMeta | null; content: string } {
+  const filePath = path.join(getZAgentRoot(), "plans", `${planId}.md`);
+
+  if (!fs.existsSync(filePath)) {
+    return { plan: null, content: "" };
+  }
+
+  const fileContent = fs.readFileSync(filePath, "utf-8");
+
+  // Parse frontmatter
+  const titleMatch = fileContent.match(/title: "(.+)"/);
+  const descMatch = fileContent.match(/description: "(.+)"/);
+  const statusMatch = fileContent.match(/status: (\w+)/);
+  const difficultyMatch = fileContent.match(/difficulty: ([HML])/);
+  const linkedTasksMatch = fileContent.match(/linkedTasks: \[(.*)\]/);
+
+  // Parse TODOs from content
+  const todoSection = fileContent.match(/## TODO 목록\n([\s\S]*?)(?=\n## |$)/);
+  const todos: Array<{ description: string; difficulty: "H" | "M" | "L" }> = [];
+
+  if (todoSection) {
+    const todoLines = todoSection[1].match(/\d+\. (.+) \(([HML])\)/g) || [];
+    for (const line of todoLines) {
+      const match = line.match(/\d+\. (.+) \(([HML])\)/);
+      if (match) {
+        todos.push({
+          description: match[1],
+          difficulty: match[2] as "H" | "M" | "L",
+        });
+      }
+    }
+  }
+
+  const plan: PlanMeta = {
+    planId,
+    title: titleMatch?.[1] || "",
+    description: descMatch?.[1] || "",
+    createdAt: "",
+    status: (statusMatch?.[1] as PlanMeta["status"]) || "draft",
+    difficulty: (difficultyMatch?.[1] as "H" | "M" | "L") || "M",
+    linkedTasks: linkedTasksMatch?.[1]
+      ? linkedTasksMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean)
+      : [],
+    todos,
+  };
+
+  return { plan, content: fileContent };
+}
+
+function listPlans(): Array<{ planId: string; title: string; status: string; difficulty: string }> {
+  const plansDir = path.join(getZAgentRoot(), "plans");
+
+  if (!fs.existsSync(plansDir)) {
+    return [];
+  }
+
+  const files = fs.readdirSync(plansDir).filter((f) => f.match(/^PLAN-\d+\.md$/));
+  const plans: Array<{ planId: string; title: string; status: string; difficulty: string }> = [];
+
+  for (const file of files) {
+    const planId = file.replace(".md", "");
+    const { plan } = getPlan(planId);
+    if (plan) {
+      plans.push({
+        planId: plan.planId,
+        title: plan.title,
+        status: plan.status,
+        difficulty: plan.difficulty,
+      });
+    }
+  }
+
+  return plans.sort((a, b) => b.planId.localeCompare(a.planId));
+}
+
+function linkPlanToTask(planId: string, taskId: string): boolean {
+  const filePath = path.join(getZAgentRoot(), "plans", `${planId}.md`);
+
+  if (!fs.existsSync(filePath)) {
+    return false;
+  }
+
+  let content = fs.readFileSync(filePath, "utf-8");
+
+  // Update linkedTasks in frontmatter
+  const linkedMatch = content.match(/linkedTasks: \[(.*)\]/);
+  if (linkedMatch) {
+    const existing = linkedMatch[1]
+      ? linkedMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean)
+      : [];
+
+    if (!existing.includes(taskId)) {
+      existing.push(taskId);
+      const newLinked = existing.map((t) => `"${t}"`).join(", ");
+      content = content.replace(/linkedTasks: \[.*\]/, `linkedTasks: [${newLinked}]`);
+      fs.writeFileSync(filePath, content, "utf-8");
+    }
+  }
+
+  // Update plan status to in_progress
+  content = content.replace(/status: (draft|ready)/, "status: in_progress");
+  fs.writeFileSync(filePath, content, "utf-8");
+
+  return true;
 }
 
 function analyzeDifficulty(input: string): DifficultyResult {
@@ -1052,6 +1285,99 @@ const tools: Tool[] = [
       required: ["pattern"],
     },
   },
+  {
+    name: "z_create_plan",
+    description: "새로운 Plan을 생성합니다. /planning 명령어에서 사용됩니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description: "Plan 제목",
+        },
+        description: {
+          type: "string",
+          description: "Plan 설명",
+        },
+      },
+      required: ["title", "description"],
+    },
+  },
+  {
+    name: "z_update_plan",
+    description: "Plan 내용을 업데이트합니다. Opus가 계획 수립 후 호출합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        planId: {
+          type: "string",
+          description: "Plan ID (예: PLAN-001)",
+        },
+        status: {
+          type: "string",
+          enum: ["draft", "ready", "in_progress", "completed", "cancelled"],
+          description: "Plan 상태",
+        },
+        todos: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              description: { type: "string" },
+              difficulty: { type: "string", enum: ["H", "M", "L"] },
+            },
+          },
+          description: "TODO 목록",
+        },
+        content: {
+          type: "string",
+          description: "Plan 본문 내용 (목표, 전략 등)",
+        },
+      },
+      required: ["planId"],
+    },
+  },
+  {
+    name: "z_get_plan",
+    description: "Plan 내용을 조회합니다. /task에서 Plan 기반 작업 시 사용합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        planId: {
+          type: "string",
+          description: "Plan ID (예: PLAN-001)",
+        },
+      },
+      required: ["planId"],
+    },
+  },
+  {
+    name: "z_list_plans",
+    description: "모든 Plan 목록을 조회합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "z_link_plan_to_task",
+    description: "Plan과 Task를 연결합니다. Plan 기반으로 Task 생성 시 호출합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        planId: {
+          type: "string",
+          description: "Plan ID",
+        },
+        taskId: {
+          type: "string",
+          description: "Task ID",
+        },
+      },
+      required: ["planId", "taskId"],
+    },
+  },
 ];
 
 // Create server
@@ -1360,6 +1686,115 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
           isError: !result.success,
+        };
+      }
+
+      case "z_create_plan": {
+        const result = createPlan(
+          args.title as string,
+          args.description as string
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                planId: result.planId,
+                filePath: result.filePath,
+                message: `✅ ${result.planId} 생성됨`,
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "z_update_plan": {
+        const success = updatePlan(
+          args.planId as string,
+          {
+            status: args.status as string | undefined,
+            todos: args.todos as Array<{ description: string; difficulty: "H" | "M" | "L" }> | undefined,
+            content: args.content as string | undefined,
+          }
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: success
+                ? `✅ ${args.planId} 업데이트됨`
+                : `❌ ${args.planId} 업데이트 실패`,
+            },
+          ],
+          isError: !success,
+        };
+      }
+
+      case "z_get_plan": {
+        const result = getPlan(args.planId as string);
+        if (!result.plan) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `❌ Plan 없음: ${args.planId}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                plan: result.plan,
+                content: result.content,
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "z_list_plans": {
+        const plans = listPlans();
+        if (plans.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "등록된 Plan이 없습니다.",
+              },
+            ],
+          };
+        }
+        return {
+          content: [
+            {
+              type: "text",
+              text: plans
+                .map((p) => `${p.planId}: ${p.title} [${p.status}] (${p.difficulty})`)
+                .join("\n"),
+            },
+          ],
+        };
+      }
+
+      case "z_link_plan_to_task": {
+        const success = linkPlanToTask(
+          args.planId as string,
+          args.taskId as string
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: success
+                ? `✅ ${args.planId} ↔ ${args.taskId} 연결됨`
+                : `❌ 연결 실패: ${args.planId}`,
+            },
+          ],
+          isError: !success,
         };
       }
 
