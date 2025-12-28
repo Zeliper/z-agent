@@ -80,7 +80,7 @@ function getZAgentRoot(): string {
 
 function ensureDirectories(): void {
   const root = getZAgentRoot();
-  const dirs = ["tasks", "lessons", "scripts", "agents", "skills", "templates", "plans"];
+  const dirs = ["tasks", "lessons", "scripts", "agents", "skills", "templates", "plans", "answers"];
 
   for (const dir of dirs) {
     const dirPath = path.join(root, dir);
@@ -139,6 +139,59 @@ function getNextPlanId(): string {
     ...files.map((f) => parseInt(f.match(/PLAN-(\d+)\.md/)?.[1] || "0"))
   );
   return `PLAN-${String(maxNum + 1).padStart(3, "0")}`;
+}
+
+function getNextAnswerId(): string {
+  const answersDir = path.join(getZAgentRoot(), "answers");
+  if (!fs.existsSync(answersDir)) {
+    return "answer-001";
+  }
+
+  const files = fs.readdirSync(answersDir).filter((f) => f.match(/^answer-\d+\.md$/));
+  if (files.length === 0) {
+    return "answer-001";
+  }
+
+  const maxNum = Math.max(
+    ...files.map((f) => parseInt(f.match(/answer-(\d+)\.md/)?.[1] || "0"))
+  );
+  return `answer-${String(maxNum + 1).padStart(3, "0")}`;
+}
+
+function saveAnswer(
+  question: string,
+  answer: string,
+  summary: string,
+  relatedLessons: string[] = [],
+  relatedFiles: string[] = []
+): { answerId: string; filePath: string; summary: string } {
+  const answerId = getNextAnswerId();
+  const now = new Date().toISOString();
+
+  const content = `---
+answerId: ${answerId}
+question: "${question.replace(/"/g, '\\"').slice(0, 200)}"
+summary: "${summary.replace(/"/g, '\\"')}"
+createdAt: ${now}
+relatedLessons: [${relatedLessons.map(l => `"${l}"`).join(", ")}]
+relatedFiles: [${relatedFiles.map(f => `"${f}"`).join(", ")}]
+---
+
+# 질문
+${question}
+
+# 답변
+${answer}
+
+# 참고
+${relatedLessons.length > 0 ? `- Lessons: ${relatedLessons.join(", ")}` : "- Lessons: 없음"}
+${relatedFiles.length > 0 ? `- Files: ${relatedFiles.join(", ")}` : "- Files: 없음"}
+`;
+
+  const filePath = path.join(getZAgentRoot(), "answers", `${answerId}.md`);
+  fs.writeFileSync(filePath, content, "utf-8");
+
+  return { answerId, filePath, summary };
 }
 
 function createPlan(title: string, description: string): { planId: string; filePath: string } {
@@ -985,6 +1038,211 @@ function generateTaskSummary(taskId: string): string {
   return summary;
 }
 
+// List all tasks with optional status filter
+function listTasks(status?: string): Array<{
+  taskId: string;
+  taskDesc: string;
+  status: string;
+  difficulty: string;
+  todoProgress: string;
+  currentTodo?: string;
+}> {
+  const tasksDir = path.join(getZAgentRoot(), "tasks");
+
+  if (!fs.existsSync(tasksDir)) {
+    return [];
+  }
+
+  const files = fs.readdirSync(tasksDir).filter((f) => f.match(/^task-\d+\.md$/));
+  const tasks: Array<{
+    taskId: string;
+    taskDesc: string;
+    status: string;
+    difficulty: string;
+    todoProgress: string;
+    currentTodo?: string;
+  }> = [];
+
+  for (const file of files) {
+    const taskId = file.replace(".md", "");
+    const { task, todos } = getTaskStatus(taskId);
+
+    if (!task) continue;
+    if (status && task.status !== status) continue;
+
+    const completedCount = todos.filter(
+      (t) => t.status === "complete" || t.status === "completed"
+    ).length;
+    const totalCount = todos.length;
+    const progress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+    const inProgressTodo = todos.find((t) => t.status === "in_progress");
+
+    tasks.push({
+      taskId: task.taskId,
+      taskDesc: task.taskDesc,
+      status: task.status,
+      difficulty: task.difficulty,
+      todoProgress: `${completedCount}/${totalCount} (${progress}%)`,
+      currentTodo: inProgressTodo?.description,
+    });
+  }
+
+  return tasks.sort((a, b) => b.taskId.localeCompare(a.taskId));
+}
+
+// List all lessons with optional category filter
+function listLessons(category?: string): Array<{
+  lessonId: string;
+  category: string;
+  tags: string[];
+  summary: string;
+  useCount: number;
+}> {
+  const lessonsDir = path.join(getZAgentRoot(), "lessons");
+
+  if (!fs.existsSync(lessonsDir)) {
+    return [];
+  }
+
+  const files = fs.readdirSync(lessonsDir).filter((f) => f.match(/^lesson-\d+\.md$/));
+  const lessons: Array<{
+    lessonId: string;
+    category: string;
+    tags: string[];
+    summary: string;
+    useCount: number;
+  }> = [];
+
+  for (const file of files) {
+    const content = fs.readFileSync(path.join(lessonsDir, file), "utf-8");
+    const lessonId = file.replace(".md", "");
+
+    const categoryMatch = content.match(/category:\s*(\S+)/);
+    const lessonCategory = categoryMatch?.[1] || "unknown";
+
+    if (category && lessonCategory !== category) continue;
+
+    const tagsMatch = content.match(/tags:\s*\n((?:\s*-\s*.+\n)+)/);
+    const tags = tagsMatch?.[1]?.match(/-\s*(.+)/g)?.map((t) => t.replace(/^-\s*/, "").trim()) || [];
+
+    const problemMatch = content.match(/# 문제 상황\n([\s\S]*?)(?=\n#|$)/);
+    const summary = problemMatch?.[1]?.trim().slice(0, 100) || "";
+
+    const useCountMatch = content.match(/useCount:\s*(\d+)/);
+    const useCount = parseInt(useCountMatch?.[1] || "0");
+
+    lessons.push({
+      lessonId,
+      category: lessonCategory,
+      tags,
+      summary,
+      useCount,
+    });
+  }
+
+  return lessons.sort((a, b) => b.lessonId.localeCompare(a.lessonId));
+}
+
+// Unified query for tasks, plans, and lessons
+function queryAll(options: {
+  type?: "all" | "tasks" | "plans" | "lessons";
+  keyword?: string;
+  status?: string;
+  category?: string;
+}): {
+  tasks?: ReturnType<typeof listTasks>;
+  plans?: ReturnType<typeof listPlans>;
+  lessons?: ReturnType<typeof listLessons>;
+  summary: {
+    taskCount: number;
+    planCount: number;
+    lessonCount: number;
+    tasksByStatus?: Record<string, number>;
+    plansByStatus?: Record<string, number>;
+  };
+} {
+  const { type = "all", keyword, status, category } = options;
+  const result: ReturnType<typeof queryAll> = {
+    summary: {
+      taskCount: 0,
+      planCount: 0,
+      lessonCount: 0,
+    },
+  };
+
+  // Get tasks
+  if (type === "all" || type === "tasks") {
+    let tasks = listTasks(status);
+
+    if (keyword) {
+      tasks = tasks.filter(
+        (t) =>
+          t.taskId.toLowerCase().includes(keyword.toLowerCase()) ||
+          t.taskDesc.toLowerCase().includes(keyword.toLowerCase())
+      );
+    }
+
+    result.tasks = tasks;
+    result.summary.taskCount = tasks.length;
+
+    if (type === "all") {
+      const allTasks = listTasks();
+      result.summary.tasksByStatus = allTasks.reduce((acc, t) => {
+        acc[t.status] = (acc[t.status] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+    }
+  }
+
+  // Get plans
+  if (type === "all" || type === "plans") {
+    let plans = listPlans();
+
+    if (status) {
+      plans = plans.filter((p) => p.status === status);
+    }
+
+    if (keyword) {
+      plans = plans.filter(
+        (p) =>
+          p.planId.toLowerCase().includes(keyword.toLowerCase()) ||
+          p.title.toLowerCase().includes(keyword.toLowerCase())
+      );
+    }
+
+    result.plans = plans;
+    result.summary.planCount = plans.length;
+
+    if (type === "all") {
+      const allPlans = listPlans();
+      result.summary.plansByStatus = allPlans.reduce((acc, p) => {
+        acc[p.status] = (acc[p.status] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+    }
+  }
+
+  // Get lessons
+  if (type === "all" || type === "lessons") {
+    let lessons = listLessons(category);
+
+    if (keyword) {
+      lessons = lessons.filter(
+        (l) =>
+          l.lessonId.toLowerCase().includes(keyword.toLowerCase()) ||
+          l.summary.toLowerCase().includes(keyword.toLowerCase()) ||
+          l.tags.some((t) => t.toLowerCase().includes(keyword.toLowerCase()))
+      );
+    }
+
+    result.lessons = lessons;
+    result.summary.lessonCount = lessons.length;
+  }
+
+  return result;
+}
+
 // Define tools
 const tools: Tool[] = [
   {
@@ -1376,6 +1634,95 @@ const tools: Tool[] = [
         },
       },
       required: ["planId", "taskId"],
+    },
+  },
+  {
+    name: "z_list_tasks",
+    description: "모든 Task 목록을 조회합니다. 상태별 필터링을 지원합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["pending", "in_progress", "completed", "cancelled", "blocked"],
+          description: "필터링할 상태 (선택사항)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "z_list_lessons",
+    description: "모든 Lesson 목록을 조회합니다. 카테고리별 필터링을 지원합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        category: {
+          type: "string",
+          enum: ["performance", "security", "architecture", "debugging", "best-practice"],
+          description: "필터링할 카테고리 (선택사항)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "z_query",
+    description: "Task, Plan, Lesson을 통합 검색합니다. /list 명령어에서 사용됩니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        type: {
+          type: "string",
+          enum: ["all", "tasks", "plans", "lessons"],
+          description: "검색 대상 (기본값: all)",
+        },
+        keyword: {
+          type: "string",
+          description: "검색 키워드 (선택사항)",
+        },
+        status: {
+          type: "string",
+          description: "상태 필터 (Task, Plan용)",
+        },
+        category: {
+          type: "string",
+          description: "카테고리 필터 (Lesson용)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "z_save_answer",
+    description: "질문에 대한 답변을 파일로 저장하고 요약만 반환합니다. /ask 명령어에서 context 절약을 위해 사용됩니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        question: {
+          type: "string",
+          description: "사용자의 원래 질문",
+        },
+        answer: {
+          type: "string",
+          description: "전체 답변 내용",
+        },
+        summary: {
+          type: "string",
+          description: "답변 요약 (1-2문장)",
+        },
+        relatedLessons: {
+          type: "array",
+          items: { type: "string" },
+          description: "관련 Lesson ID 목록",
+        },
+        relatedFiles: {
+          type: "array",
+          items: { type: "string" },
+          description: "참조한 파일 목록",
+        },
+      },
+      required: ["question", "answer", "summary"],
     },
   },
 ];
@@ -1795,6 +2142,173 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
           isError: !success,
+        };
+      }
+
+      case "z_list_tasks": {
+        const tasks = listTasks(args.status as string | undefined);
+        if (tasks.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: args.status
+                  ? `${args.status} 상태의 Task가 없습니다.`
+                  : "등록된 Task가 없습니다.",
+              },
+            ],
+          };
+        }
+
+        const header = `## Tasks (${tasks.length}개)${args.status ? ` - ${args.status}` : ""}\n\n`;
+        const table = tasks
+          .map((t) => {
+            const emoji = STATUS_EMOJI[t.status] || "⏳";
+            return `| ${t.taskId} | ${t.taskDesc.slice(0, 30)}${t.taskDesc.length > 30 ? "..." : ""} | ${emoji} ${t.status} | ${t.difficulty} | ${t.todoProgress} |${t.currentTodo ? ` ${t.currentTodo.slice(0, 20)}...` : ""}`;
+          })
+          .join("\n");
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: header + "| ID | 설명 | 상태 | 난이도 | 진행률 |\n|---|---|---|---|---|\n" + table,
+            },
+          ],
+        };
+      }
+
+      case "z_list_lessons": {
+        const lessons = listLessons(args.category as string | undefined);
+        if (lessons.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: args.category
+                  ? `${args.category} 카테고리의 Lesson이 없습니다.`
+                  : "등록된 Lesson이 없습니다.",
+              },
+            ],
+          };
+        }
+
+        const header = `## Lessons (${lessons.length}개)${args.category ? ` - ${args.category}` : ""}\n\n`;
+        const table = lessons
+          .map((l) => {
+            const tagsStr = l.tags.slice(0, 3).join(", ");
+            return `| ${l.lessonId} | ${l.category} | [${tagsStr}] | ${l.summary.slice(0, 40)}${l.summary.length > 40 ? "..." : ""} |`;
+          })
+          .join("\n");
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: header + "| ID | 카테고리 | 태그 | 요약 |\n|---|---|---|---|\n" + table,
+            },
+          ],
+        };
+      }
+
+      case "z_query": {
+        const result = queryAll({
+          type: (args.type as "all" | "tasks" | "plans" | "lessons") || "all",
+          keyword: args.keyword as string | undefined,
+          status: args.status as string | undefined,
+          category: args.category as string | undefined,
+        });
+
+        let output = "## 조회 결과\n\n";
+
+        // Summary
+        output += "### 요약\n";
+        output += `- Tasks: ${result.summary.taskCount}개`;
+        if (result.summary.tasksByStatus) {
+          const statusParts = Object.entries(result.summary.tasksByStatus)
+            .map(([s, c]) => `${s}: ${c}`)
+            .join(", ");
+          output += ` (${statusParts})`;
+        }
+        output += "\n";
+
+        output += `- Plans: ${result.summary.planCount}개`;
+        if (result.summary.plansByStatus) {
+          const statusParts = Object.entries(result.summary.plansByStatus)
+            .map(([s, c]) => `${s}: ${c}`)
+            .join(", ");
+          output += ` (${statusParts})`;
+        }
+        output += "\n";
+
+        output += `- Lessons: ${result.summary.lessonCount}개\n\n`;
+
+        // Tasks
+        if (result.tasks && result.tasks.length > 0) {
+          output += "### Tasks\n";
+          for (const t of result.tasks.slice(0, 10)) {
+            const emoji = STATUS_EMOJI[t.status] || "⏳";
+            output += `- ${t.taskId}: ${t.taskDesc.slice(0, 40)} [${emoji} ${t.status}] ${t.todoProgress}\n`;
+          }
+          if (result.tasks.length > 10) {
+            output += `  ... 외 ${result.tasks.length - 10}개\n`;
+          }
+          output += "\n";
+        }
+
+        // Plans
+        if (result.plans && result.plans.length > 0) {
+          output += "### Plans\n";
+          for (const p of result.plans.slice(0, 10)) {
+            output += `- ${p.planId}: ${p.title} [${p.status}] (${p.difficulty})\n`;
+          }
+          if (result.plans.length > 10) {
+            output += `  ... 외 ${result.plans.length - 10}개\n`;
+          }
+          output += "\n";
+        }
+
+        // Lessons
+        if (result.lessons && result.lessons.length > 0) {
+          output += "### Lessons\n";
+          for (const l of result.lessons.slice(0, 10)) {
+            output += `- ${l.lessonId}: [${l.category}] ${l.summary.slice(0, 40)}\n`;
+          }
+          if (result.lessons.length > 10) {
+            output += `  ... 외 ${result.lessons.length - 10}개\n`;
+          }
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: output,
+            },
+          ],
+        };
+      }
+
+      case "z_save_answer": {
+        const result = saveAnswer(
+          args.question as string,
+          args.answer as string,
+          args.summary as string,
+          (args.relatedLessons as string[]) || [],
+          (args.relatedFiles as string[]) || []
+        );
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `## 답변 요약
+
+${result.summary}
+
+📁 상세 내용: .z-agent/answers/${result.answerId}.md`,
+            },
+          ],
         };
       }
 
