@@ -92,16 +92,38 @@ function clearZAgentCache() {
 }
 
 function init() {
-  log('\n🚀 z-agent setup\n', 'blue');
+  // Check if this is a re-spawn after cache clear
+  const isRespawn = process.env.Z_AGENT_RESPAWN === '1';
 
-  // 0. Clear z-agent npx cache
-  log('🧹 Clearing z-agent cache...', 'blue');
-  const cleared = clearZAgentCache();
-  if (cleared > 0) {
-    log(`  cleared ${cleared} cached package(s)`, 'green');
-  } else {
-    log('  no cache found', 'dim');
+  if (!isRespawn) {
+    // First run: clear cache and respawn with fresh version
+    log('\n🧹 Checking for updates...', 'blue');
+    const cleared = clearZAgentCache();
+
+    if (cleared > 0) {
+      log(`  cleared ${cleared} cached package(s)`, 'green');
+      log('  restarting with fresh version...', 'dim');
+
+      // Respawn with fresh npx download
+      const { spawnSync } = require('child_process');
+      const isWindows = process.platform === 'win32';
+
+      const result = isWindows
+        ? spawnSync('cmd', ['/c', 'npx', '-y', 'github:Zeliper/z-agent', 'init'], {
+            stdio: 'inherit',
+            env: { ...process.env, Z_AGENT_RESPAWN: '1' }
+          })
+        : spawnSync('npx', ['-y', 'github:Zeliper/z-agent', 'init'], {
+            stdio: 'inherit',
+            env: { ...process.env, Z_AGENT_RESPAWN: '1' }
+          });
+
+      process.exit(result.status || 0);
+    }
+    log('  already up to date', 'dim');
   }
+
+  log('\n🚀 z-agent setup\n', 'blue');
 
   // 1. Copy .z-agent folder
   const zAgentSrc = path.join(TEMPLATE_DIR, '.z-agent');
