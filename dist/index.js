@@ -465,6 +465,117 @@ function readFile(filePath, offset, limit) {
         };
     }
 }
+function listDir(dirPath, recursive = false) {
+    try {
+        const absolutePath = path.isAbsolute(dirPath) ? dirPath : path.join(process.cwd(), dirPath);
+        if (!fs.existsSync(absolutePath)) {
+            return {
+                success: false,
+                entries: [],
+                message: `❌ 디렉토리 없음: ${dirPath}`,
+            };
+        }
+        const stat = fs.statSync(absolutePath);
+        if (!stat.isDirectory()) {
+            return {
+                success: false,
+                entries: [],
+                message: `❌ 디렉토리가 아님: ${dirPath}`,
+            };
+        }
+        const entries = [];
+        const ignoreDirs = ['.git', 'node_modules', '.z-agent', '.claude', '__pycache__', '.venv', 'venv', 'dist', 'build'];
+        function scanDir(currentPath, relativeTo) {
+            const items = fs.readdirSync(currentPath, { withFileTypes: true });
+            for (const item of items) {
+                if (ignoreDirs.includes(item.name))
+                    continue;
+                if (item.name.startsWith('.') && item.name !== '.')
+                    continue;
+                const fullPath = path.join(currentPath, item.name);
+                const relativePath = path.relative(relativeTo, fullPath);
+                if (item.isDirectory()) {
+                    entries.push(relativePath + '/');
+                    if (recursive) {
+                        scanDir(fullPath, relativeTo);
+                    }
+                }
+                else {
+                    entries.push(relativePath);
+                }
+            }
+        }
+        scanDir(absolutePath, absolutePath);
+        entries.sort();
+        return {
+            success: true,
+            entries,
+            message: `✅ ${dirPath} (${entries.length}개 항목)`,
+        };
+    }
+    catch (error) {
+        return {
+            success: false,
+            entries: [],
+            message: `❌ 디렉토리 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
+        };
+    }
+}
+function globFiles(pattern, basePath) {
+    try {
+        const searchPath = basePath
+            ? (path.isAbsolute(basePath) ? basePath : path.join(process.cwd(), basePath))
+            : process.cwd();
+        if (!fs.existsSync(searchPath)) {
+            return {
+                success: false,
+                files: [],
+                message: `❌ 경로 없음: ${basePath || '.'}`,
+            };
+        }
+        const files = [];
+        const ignoreDirs = ['.git', 'node_modules', '.z-agent', '.claude', '__pycache__', '.venv', 'venv'];
+        // Convert glob pattern to regex
+        const regexPattern = pattern
+            .replace(/\./g, '\\.')
+            .replace(/\*\*/g, '{{GLOBSTAR}}')
+            .replace(/\*/g, '[^/]*')
+            .replace(/{{GLOBSTAR}}/g, '.*')
+            .replace(/\?/g, '.');
+        const regex = new RegExp(`^${regexPattern}$`);
+        function scanDir(currentPath) {
+            const items = fs.readdirSync(currentPath, { withFileTypes: true });
+            for (const item of items) {
+                if (ignoreDirs.includes(item.name))
+                    continue;
+                const fullPath = path.join(currentPath, item.name);
+                const relativePath = path.relative(searchPath, fullPath);
+                if (item.isDirectory()) {
+                    scanDir(fullPath);
+                }
+                else {
+                    if (regex.test(relativePath) || regex.test(item.name)) {
+                        files.push(relativePath);
+                    }
+                }
+            }
+        }
+        scanDir(searchPath);
+        files.sort();
+        return {
+            success: true,
+            files,
+            message: `✅ ${pattern} (${files.length}개 파일)`,
+        };
+    }
+    catch (error) {
+        return {
+            success: false,
+            files: [],
+            message: `❌ 파일 검색 실패: ${error instanceof Error ? error.message : String(error)}`,
+        };
+    }
+}
 function generateTaskSummary(taskId) {
     const { task, todos } = getTaskStatus(taskId);
     if (!task) {
@@ -746,6 +857,42 @@ const tools = [
             required: ["filePath"],
         },
     },
+    {
+        name: "z_list_dir",
+        description: "디렉토리 내용을 조회합니다. .git, node_modules, .z-agent, .claude 등 시스템 폴더는 자동 제외됩니다.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                dirPath: {
+                    type: "string",
+                    description: "조회할 디렉토리 경로 (기본값: 현재 디렉토리)",
+                },
+                recursive: {
+                    type: "boolean",
+                    description: "하위 디렉토리까지 조회할지 여부 (기본값: false)",
+                },
+            },
+            required: [],
+        },
+    },
+    {
+        name: "z_glob",
+        description: "패턴으로 파일을 검색합니다. **, *, ? 패턴을 지원합니다. 시스템 폴더는 자동 제외됩니다.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                pattern: {
+                    type: "string",
+                    description: "검색 패턴 (예: **/*.ts, src/*.js, *.md)",
+                },
+                basePath: {
+                    type: "string",
+                    description: "검색 시작 경로 (기본값: 현재 디렉토리)",
+                },
+            },
+            required: ["pattern"],
+        },
+    },
 ];
 // Create server
 const server = new Server({
@@ -943,6 +1090,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                             type: "text",
                             text: result.success
                                 ? result.content
+                                : result.message,
+                        },
+                    ],
+                    isError: !result.success,
+                };
+            }
+            case "z_list_dir": {
+                const result = listDir(args.dirPath || ".", args.recursive || false);
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: result.success
+                                ? result.entries.join("\n")
+                                : result.message,
+                        },
+                    ],
+                    isError: !result.success,
+                };
+            }
+            case "z_glob": {
+                const result = globFiles(args.pattern, args.basePath);
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: result.success
+                                ? result.files.join("\n")
                                 : result.message,
                         },
                     ],
