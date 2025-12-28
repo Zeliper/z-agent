@@ -185,29 +185,39 @@ function setupMcpConfig() {
     }
 
     const existingConfig = config.mcpServers['z-agent'];
-    if (existingConfig) {
-      // Check if config needs update
-      const existingStr = JSON.stringify(existingConfig);
-      const newStr = JSON.stringify(mcpConfig);
 
-      // Also check if platform-specific wrapper is correct
-      const needsWindowsWrapper = isWindows && existingConfig.command === 'npx';
-      const hasWrongWrapper = isWindows && existingConfig.command !== 'cmd';
+    // Check if update is needed
+    let needsUpdate = false;
+    let updateReason = '';
 
-      if (existingStr === newStr && !needsWindowsWrapper && !hasWrongWrapper) {
-        log(`  [${name}] z-agent MCP config already up to date`, 'dim');
-        continue;
-      }
-
-      if (needsWindowsWrapper || hasWrongWrapper) {
-        log(`  [${name}] updating z-agent MCP config (adding Windows wrapper)`, 'green');
-      } else {
-        log(`  [${name}] updating z-agent MCP config`, 'green');
-      }
+    if (!existingConfig) {
+      needsUpdate = true;
+      updateReason = 'adding';
     } else {
-      log(`  [${name}] adding z-agent MCP config`, 'green');
+      // Check Windows wrapper requirement
+      if (isWindows && existingConfig.command !== 'cmd') {
+        needsUpdate = true;
+        updateReason = 'adding Windows cmd wrapper';
+      } else if (!isWindows && existingConfig.command === 'cmd') {
+        needsUpdate = true;
+        updateReason = 'removing Windows cmd wrapper';
+      } else {
+        // Check if args match (compare as arrays)
+        const existingArgs = JSON.stringify(existingConfig.args || []);
+        const newArgs = JSON.stringify(mcpConfig.args);
+        if (existingArgs !== newArgs) {
+          needsUpdate = true;
+          updateReason = 'updating args';
+        }
+      }
     }
 
+    if (!needsUpdate) {
+      log(`  [${name}] z-agent MCP config already up to date`, 'dim');
+      continue;
+    }
+
+    log(`  [${name}] ${updateReason} z-agent MCP config`, 'green');
     config.mcpServers['z-agent'] = mcpConfig;
 
     // Write config
