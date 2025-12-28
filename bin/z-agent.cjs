@@ -132,6 +132,10 @@ function init() {
     fs.mkdirSync(lessonsDest, { recursive: true });
   }
 
+  // 4. Setup MCP configuration in .claude.json
+  log('\n📁 Setting up MCP configuration...', 'blue');
+  setupMcpConfig();
+
   log('\n✅ z-agent setup complete!\n', 'green');
   log('Available commands:', 'blue');
   log('  /task <description>    - Start a new task');
@@ -139,6 +143,62 @@ function init() {
   log('  /planning <plan>       - Create a plan\n');
 
   log('📖 See .z-agent/README.md for more details\n', 'dim');
+}
+
+function setupMcpConfig() {
+  const os = require('os');
+  const claudeJsonPath = path.join(TARGET_DIR, '.claude.json');
+  const isWindows = process.platform === 'win32';
+
+  // Create platform-specific MCP config
+  let mcpConfig;
+  if (isWindows) {
+    mcpConfig = {
+      command: 'cmd',
+      args: ['/c', 'npx', '-y', 'github:Zeliper/z-agent', 'serve']
+    };
+  } else {
+    mcpConfig = {
+      command: 'npx',
+      args: ['-y', 'github:Zeliper/z-agent', 'serve']
+    };
+  }
+
+  // Read existing config or create new
+  let config = {};
+  if (fs.existsSync(claudeJsonPath)) {
+    try {
+      const content = fs.readFileSync(claudeJsonPath, 'utf-8');
+      config = JSON.parse(content);
+    } catch (e) {
+      log('  warning: could not parse existing .claude.json, creating new', 'yellow');
+    }
+  }
+
+  // Merge MCP servers config
+  if (!config.mcpServers) {
+    config.mcpServers = {};
+  }
+
+  const existingConfig = config.mcpServers['z-agent'];
+  if (existingConfig) {
+    // Check if config is different
+    const existingStr = JSON.stringify(existingConfig);
+    const newStr = JSON.stringify(mcpConfig);
+    if (existingStr === newStr) {
+      log('  z-agent MCP config already up to date', 'dim');
+      return;
+    }
+    log('  updating z-agent MCP config', 'green');
+  } else {
+    log('  adding z-agent MCP config', 'green');
+  }
+
+  config.mcpServers['z-agent'] = mcpConfig;
+
+  // Write config
+  fs.writeFileSync(claudeJsonPath, JSON.stringify(config, null, 2), 'utf-8');
+  log(`  platform: ${isWindows ? 'Windows' : 'Unix'}`, 'dim');
 }
 
 function serve() {
