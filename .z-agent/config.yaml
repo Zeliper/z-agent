@@ -42,7 +42,7 @@ errorHandling:
 # Lessons Learned 설정
 lessons:
   autoSearch: true           # Task 시작 시 자동 검색
-  autoRecord: false          # Task 완료 후 자동 기록 (사용자 확인 필요)
+  autoRecord: true          # Task 완료 후 자동 기록 (사용자 확인 필요)
   maxRelatedLessons: 5       # 최대 관련 Lesson 표시 수
   categories:
     - performance
