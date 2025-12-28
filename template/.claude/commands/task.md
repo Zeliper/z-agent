@@ -2,53 +2,78 @@
 
 사용자가 작업을 요청할 때 사용하는 z-agent 명령어입니다.
 
-## 사용법
+## 실행 시 반드시 수행할 작업
+
+이 명령어가 실행되면 **반드시 z-agent MCP 도구들을 사용**하여 다음 순서로 처리하세요:
+
+### 1. 난이도 분석
 ```
-/task <작업 설명>
+z_analyze_difficulty 도구 호출
+- input: 사용자 입력 전체
+- 결과: difficulty (H/M/L), suggestedModel (opus/sonnet/haiku)
+```
+
+### 2. 관련 Lesson 검색
+```
+z_search_lessons 도구 호출
+- query: 사용자 입력에서 핵심 키워드
+- 결과: 관련 lessons 목록
+```
+
+### 3. Task 생성
+```
+z_create_task 도구 호출
+- description: 사용자 입력 요약
+- todos: 작업을 분해한 TODO 목록 (각각 difficulty 포함)
+- 결과: taskId, filePath
+```
+
+### 4. 각 TODO 처리 (순차적으로)
+```
+for each TODO:
+  a. z_update_todo 호출 - status를 "in_progress"로 변경
+  b. z_get_agent_prompt 호출 - 난이도에 맞는 프롬프트 획득
+  c. Task tool로 해당 모델(opus/sonnet/haiku)에 작업 위임
+  d. z_save_todo_result 호출 - 결과 저장
+  e. z_update_todo 호출 - status를 "complete"로 변경
+```
+
+### 5. 최종 요약 생성
+```
+z_generate_summary 도구 호출
+- taskId: 생성된 Task ID
+- 결과를 사용자에게 출력
+```
+
+### 6. (선택) Lesson 기록
+작업 중 새로운 패턴이나 해결책을 발견했다면:
+```
+z_record_lesson 도구 호출
+- category, problem, solution, tags 포함
 ```
 
 ## 예시
+
 ```
-/task 네트워크 병목 현상을 분석하고 해결해줘
-/task 사용자 인증 기능을 JWT로 구현해줘
-/task 이 코드의 성능을 최적화해줘
+사용자: /task 네트워크 병목 현상을 분석하고 해결해줘
+
+1. z_analyze_difficulty(input="네트워크 병목 현상을 분석하고 해결해줘")
+   → difficulty: H, suggestedModel: opus
+
+2. z_search_lessons(query="네트워크 병목 성능")
+   → [lesson-001: 동기 I/O 병목 해결]
+
+3. z_create_task(description="네트워크 병목 현상 분석 및 해결", todos=[...])
+   → taskId: task-001
+
+4. TODO 순차 처리...
+
+5. z_generate_summary(taskId="task-001")
+   → 최종 요약 출력
 ```
-
-## 처리 흐름
-
-1. **난이도 분석** (Haiku)
-   - 사용자 입력을 분석하여 H/M/L 난이도 판정
-   - `.z-agent/skills/difficulty-analyzer.md` 참조
-
-2. **Task 초기화**
-   - 새 Task 파일 생성 (`.z-agent/tasks/task-NNN.md`)
-   - TODO 목록 자동 생성
-   - 관련 Lessons 검색 및 첨부
-   - `.z-agent/skills/task-initializer.md` 참조
-
-3. **작업 수행** (Session Manager)
-   - 각 TODO를 순차적으로 처리
-   - 난이도에 따른 적절한 Agent 선택
-   - 진행 상황 모니터링
-   - `.z-agent/agents/session-manager.md` 참조
-
-4. **결과 보고**
-   - 간결한 요약 세션에 출력
-   - 상세 내용은 파일에 저장
-   - Lesson 기록 여부 판단
-
-## 실행 시 동작
-
-이 명령어가 실행되면 다음을 수행하세요:
-
-1. 사용자 입력을 분석하여 난이도를 판정합니다.
-2. `.z-agent/tasks/` 폴더에 새 Task 파일을 생성합니다.
-3. 작업을 논리적 단계로 분해하여 TODO 목록을 만듭니다.
-4. 각 TODO를 순차적으로 처리합니다.
-5. 모든 작업 완료 후 결과를 요약하여 보고합니다.
 
 ## 주의사항
 
-- 세션 컨텍스트 최소화를 위해 상세 내용은 파일에 저장
+- **반드시 z_* MCP 도구들을 사용**하세요
+- 세션 컨텍스트 최소화: 상세 내용은 파일에 저장, 요약만 출력
 - 에러 발생 시 사용자에게 선택지 제공
-- 크로스 플랫폼 호환성 유지 (Windows/Linux)
