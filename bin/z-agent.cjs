@@ -137,7 +137,9 @@ function init() {
   log('Available commands:', 'blue');
   log('  /task <description>    - Start a new task');
   log('  /ask <question>        - Ask a question');
-  log('  /planning <plan>       - Create a plan\n');
+  log('  /planning <plan>       - Create a plan');
+  log('  /list                  - View all tasks, plans, lessons');
+  log('  /clear_task            - Cleanup completed items\n');
 
   log('📖 See .z-agent/README.md for more details\n', 'dim');
 }
