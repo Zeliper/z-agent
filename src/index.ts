@@ -833,14 +833,14 @@ function updateTodoStatus(
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   let updated = false;
 
-  // More flexible regex: handle trailing spaces, doesn't require exact line end
-  const todoRegex = /^([⏳🔄✅❌🚫])\s*-\s*(\d+)\.\s*(.+?)\s*\(([HML])\)/;
+  // More flexible regex: use alternation for emoji (surrogate pairs issue in char class)
+  const todoRegex = /^(⏳|🔄|✅|❌|🚫)\s*-\s*(\d+)\.\s*(.+)\s*\(([HML])\)\s*$/u;
   for (let i = 0; i < lines.length; i++) {
     const trimmedLine = lines[i].trim();
     const match = trimmedLine.match(todoRegex);
     if (match && parseInt(match[2]) === todoIndex) {
       const emoji = STATUS_EMOJI[newStatus] || "⏳";
-      lines[i] = `${emoji} - ${match[2]}. ${match[3]} (${match[4]})`;
+      lines[i] = `${emoji} - ${match[2]}. ${match[3].trim()} (${match[4]})`;
       updated = true;
       break;
     }
@@ -864,11 +864,12 @@ function getTaskStatus(taskId: string): { task: TaskMeta | null; todos: TodoItem
   const content = fs.readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
   const todos: TodoItem[] = [];
 
-  // Parse TODOs - more flexible regex that handles trailing whitespace
+  // Parse TODOs - use alternation for emoji (surrogate pairs issue in char class)
+  const todoRegex = /^(⏳|🔄|✅|❌|🚫)\s*-\s*(\d+)\.\s*(.+)\s*\(([HML])\)\s*$/u;
   const lines = content.split("\n");
   for (const line of lines) {
     const trimmedLine = line.trim();
-    const match = trimmedLine.match(/^([⏳🔄✅❌🚫])\s*-\s*(\d+)\.\s*(.+?)\s*\(([HML])\)/);
+    const match = trimmedLine.match(todoRegex);
     if (match) {
       const emoji = match[1];
       const status = Object.entries(STATUS_EMOJI).find(([_, e]) => e === emoji)?.[0] || "pending";
