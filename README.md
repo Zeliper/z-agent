@@ -51,6 +51,7 @@ claude mcp list
 | `z_create_task` | 새 Task 생성 및 TODO 목록 생성 |
 | `z_update_todo` | TODO 상태 업데이트 |
 | `z_get_task_status` | Task 상태 조회 |
+| `z_get_tasks_batch` | 여러 Task 한 번에 조회 (TODO 진행 상황 포함) |
 | `z_get_agent_prompt` | 난이도별 Agent 프롬프트 반환 |
 | `z_save_todo_result` | TODO 결과 파일 저장 |
 | `z_generate_summary` | Task 요약 생성 |

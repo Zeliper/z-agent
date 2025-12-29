@@ -833,8 +833,11 @@ function updateTodoStatus(
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   let updated = false;
 
+  // More flexible regex: handle trailing spaces, doesn't require exact line end
+  const todoRegex = /^([⏳🔄✅❌🚫])\s*-\s*(\d+)\.\s*(.+?)\s*\(([HML])\)/;
   for (let i = 0; i < lines.length; i++) {
-    const match = lines[i].match(/^([⏳🔄✅❌🚫])\s*-\s*(\d+)\.\s*(.+?)\s*\(([HML])\)\s*$/);
+    const trimmedLine = lines[i].trim();
+    const match = trimmedLine.match(todoRegex);
     if (match && parseInt(match[2]) === todoIndex) {
       const emoji = STATUS_EMOJI[newStatus] || "⏳";
       lines[i] = `${emoji} - ${match[2]}. ${match[3]} (${match[4]})`;
@@ -861,17 +864,21 @@ function getTaskStatus(taskId: string): { task: TaskMeta | null; todos: TodoItem
   const content = fs.readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
   const todos: TodoItem[] = [];
 
-  // Parse TODOs
-  const todoMatches = content.matchAll(/^([⏳🔄✅❌🚫])\s*-\s*(\d+)\.\s*(.+?)\s*\(([HML])\)\s*$/gm);
-  for (const match of todoMatches) {
-    const emoji = match[1];
-    const status = Object.entries(STATUS_EMOJI).find(([_, e]) => e === emoji)?.[0] || "pending";
-    todos.push({
-      index: parseInt(match[2]),
-      description: match[3],
-      difficulty: match[4] as "H" | "M" | "L",
-      status: status as TodoItem["status"],
-    });
+  // Parse TODOs - more flexible regex that handles trailing whitespace
+  const lines = content.split("\n");
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+    const match = trimmedLine.match(/^([⏳🔄✅❌🚫])\s*-\s*(\d+)\.\s*(.+?)\s*\(([HML])\)/);
+    if (match) {
+      const emoji = match[1];
+      const status = Object.entries(STATUS_EMOJI).find(([_, e]) => e === emoji)?.[0] || "pending";
+      todos.push({
+        index: parseInt(match[2]),
+        description: match[3].trim(),
+        difficulty: match[4] as "H" | "M" | "L",
+        status: status as TodoItem["status"],
+      });
+    }
   }
 
   // Parse meta
@@ -1986,6 +1993,21 @@ const tools: Tool[] = [
     },
   },
   {
+    name: "z_get_tasks_batch",
+    description: "여러 Task의 상태를 한 번에 조회합니다. 각 Task의 TODO 진행 상황도 포함됩니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "조회할 Task ID 목록 (예: [\"task-001\", \"task-002\"])",
+        },
+      },
+      required: ["taskIds"],
+    },
+  },
+  {
     name: "z_search_lessons",
     description: "관련된 Lessons Learned를 검색합니다.",
     inputSchema: {
@@ -2727,6 +2749,40 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: "text",
               text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "z_get_tasks_batch": {
+        const taskIds = args.taskIds as string[];
+        const results: Array<{
+          taskId: string;
+          task: TaskMeta | null;
+          todos: TodoItem[];
+          todoProgress: string;
+        }> = [];
+
+        for (const taskId of taskIds) {
+          const { task, todos } = getTaskStatus(taskId);
+          const completed = todos.filter(t => t.status === "complete" || t.status === "completed").length;
+          const total = todos.length;
+          results.push({
+            taskId,
+            task,
+            todos,
+            todoProgress: `${completed}/${total}`,
+          });
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                count: results.length,
+                tasks: results,
+              }, null, 2),
             },
           ],
         };
