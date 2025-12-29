@@ -18,7 +18,7 @@ npx -y github:Zeliper/z-agent init
 
 이 명령어는 다음을 설치합니다:
 - `.z-agent/` - 설정, 템플릿, 스크립트
-- `.claude/commands/` - Claude Code 커스텀 명령어 (`/task`, `/ask`, `/planning`)
+- `.claude/commands/` - Claude Code 커스텀 명령어 (`/task`, `/ask`, `/planning`, `/list`)
 
 ### 3. Claude Code 재시작
 
@@ -30,9 +30,18 @@ npx -y github:Zeliper/z-agent init
 claude mcp list
 ```
 
+## 커스텀 명령어
+
+| 명령어 | 설명 |
+|--------|------|
+| `/task` | Task 기반 작업 실행 - 난이도 분석 후 적절한 모델에 위임 |
+| `/ask` | 질문 및 답변 저장 - 나중에 참조 가능 |
+| `/planning` | 계획 수립 - Answer를 참조하여 Plan 생성 |
+| `/list` | Task, Plan, Lesson, Answer 통합 조회 |
+
 ## 사용 가능한 도구
 
-MCP 서버가 제공하는 도구들:
+### 핵심 도구
 
 | 도구 | 설명 |
 |------|------|
@@ -40,11 +49,55 @@ MCP 서버가 제공하는 도구들:
 | `z_create_task` | 새 Task 생성 및 TODO 목록 생성 |
 | `z_update_todo` | TODO 상태 업데이트 |
 | `z_get_task_status` | Task 상태 조회 |
-| `z_search_lessons` | 관련 Lesson 검색 |
-| `z_record_lesson` | 새 Lesson 기록 |
 | `z_get_agent_prompt` | 난이도별 Agent 프롬프트 반환 |
 | `z_save_todo_result` | TODO 결과 파일 저장 |
 | `z_generate_summary` | Task 요약 생성 |
+
+### Lesson 관리
+
+| 도구 | 설명 |
+|------|------|
+| `z_search_lessons` | 관련 Lesson 검색 |
+| `z_record_lesson` | 새 Lesson 기록 |
+| `z_list_lessons` | Lesson 목록 조회 |
+
+### Plan 관리
+
+| 도구 | 설명 |
+|------|------|
+| `z_create_plan` | 새 Plan 생성 |
+| `z_update_plan` | Plan 내용 업데이트 |
+| `z_get_plan` | Plan 조회 |
+| `z_list_plans` | Plan 목록 조회 |
+| `z_link_plan_to_task` | Plan과 Task 연결 |
+
+### Answer 관리
+
+| 도구 | 설명 |
+|------|------|
+| `z_save_answer` | 질문에 대한 답변 저장 |
+| `z_get_answer` | 답변 상세 조회 |
+| `z_list_answers` | 답변 목록 조회 |
+| `z_link_answer_to_plan` | Answer와 Plan 연결 |
+| `z_link_answer_to_task` | Answer와 Task 연결 |
+
+### 통합 검색 및 관계 조회
+
+| 도구 | 설명 |
+|------|------|
+| `z_query` | Task, Plan, Lesson, Answer 통합 검색 |
+| `z_get_related` | 특정 엔티티와 연결된 항목 조회 |
+| `z_list_tasks` | Task 목록 조회 |
+
+### 파일 시스템 (Context 절약)
+
+| 도구 | 설명 |
+|------|------|
+| `z_write_file` | 파일 생성 (간결한 결과만 반환) |
+| `z_edit_file` | 파일 수정 (간결한 결과만 반환) |
+| `z_read_file` | 파일 읽기 |
+| `z_list_dir` | 디렉토리 조회 (시스템 폴더 자동 제외) |
+| `z_glob` | 패턴으로 파일 검색 |
 
 ## 워크플로우 예시
 
@@ -64,6 +117,20 @@ MCP 서버가 제공하는 도구들:
 6. (선택) z_record_lesson으로 Lesson 기록
 ```
 
+### /ask → /planning → /task 흐름
+
+```
+1. /ask: 질문에 대한 답변 조사 및 저장
+   - z_save_answer로 결과 저장
+
+2. /planning: Answer를 참조하여 계획 수립
+   - z_create_plan으로 Plan 생성
+   - z_link_answer_to_plan으로 연결
+
+3. /task: Plan을 기반으로 작업 실행
+   - z_link_plan_to_task로 연결
+```
+
 ## 난이도별 모델 매핑
 
 | 난이도 | 모델 | 용도 |
@@ -81,11 +148,16 @@ MCP 서버가 제공하는 도구들:
 │   └── task-001.md
 ├── task-001/                # Task별 결과
 │   └── todo-001.md
+├── plans/                   # Plan 파일
+│   └── PLAN-001.md
+├── answers/                 # Answer 파일
+│   └── answer-001.md
 ├── lessons/                 # Lessons Learned
 │   └── lesson-001.md
 ├── agents/                  # Agent 프롬프트 참조
 ├── skills/                  # Skill 정의 참조
 ├── templates/               # 파일 템플릿
+├── temp/                    # 임시 파일 (draft 등)
 └── scripts/
     └── task-manager.py      # CLI 도구
 ```
@@ -108,6 +180,11 @@ cd z-agent
 npm install
 npm run build
 ```
+
+## 요구사항
+
+- Node.js >= 18.0.0
+- Claude Code CLI
 
 ## 라이선스
 
