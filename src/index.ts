@@ -808,9 +808,9 @@ function updateTodoFile(
   content = content.replace(/^status: .+$/m, `status: ${newStatus}`);
   content = content.replace(/^updatedAt: .+$/m, `updatedAt: ${now}`);
 
-  // Update status display line
+  // Update status display line (use alternation for emoji surrogate pairs)
   content = content.replace(
-    /\*\*상태\*\*: [⏳🔄✅❌🚫] \w+/,
+    /\*\*상태\*\*: (⏳|🔄|✅|❌|🚫) \w+/u,
     `**상태**: ${emoji} ${newStatus}`
   );
 
@@ -1088,8 +1088,8 @@ function getTasksByStatus(status: string): Array<{
     const taskDescMatch = content.match(/taskDesc:\s*(.+)/);
     const difficultyMatch = content.match(/difficulty:\s*([HML])/);
 
-    // Count TODOs
-    const todoMatches = content.matchAll(/^([⏳🔄✅❌🚫])\s*-\s*\d+\./gm);
+    // Count TODOs (use alternation for emoji surrogate pairs)
+    const todoMatches = content.matchAll(/^(⏳|🔄|✅|❌|🚫)\s*-\s*\d+\./gmu);
     let total = 0, completed = 0, pending = 0;
     for (const match of todoMatches) {
       total++;
