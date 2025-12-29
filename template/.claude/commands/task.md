@@ -79,17 +79,28 @@ z_get_related(entityType: "task", entityId: "task-001")
 
 ### A. 일반 Task (기존 방식)
 
-#### 1. 난이도 분석
+#### 1. 관련 Lesson 검색 (필수 - 가장 먼저!)
+
+**⚠️ 모든 Task는 Lesson 검색으로 시작해야 합니다.**
+
+```
+z_search_lessons(query: "핵심 키워드")
+→ 관련 lessons 참조
+→ 기존 경험이 있다면 해당 solution 활용
+```
+
+**Lesson이 발견된 경우:**
+```
+💡 관련 Lesson 발견: lesson-XXX
+이전 해결 방법: [solution 내용 요약]
+→ 해당 방법 참고하여 작업 진행
+```
+
+#### 2. 난이도 분석
 ```
 z_analyze_difficulty(input: "사용자 입력")
 → difficulty: H/M/L
 → suggestedModel: opus/sonnet/haiku
-```
-
-#### 2. 관련 Lesson 검색
-```
-z_search_lessons(query: "핵심 키워드")
-→ 관련 lessons 참조
 ```
 
 #### 3. Task 생성
@@ -106,7 +117,13 @@ z_create_task(
 
 ### B. Plan 기반 Task (PLAN-XXX 지정 시)
 
-#### 1. Plan 조회
+#### 1. 관련 Lesson 검색 (필수)
+```
+z_search_lessons(query: "Plan 제목 또는 핵심 키워드")
+→ 관련 lessons 참조
+```
+
+#### 2. Plan 조회
 ```
 사용자: /task PLAN-001 시작해줘
 
@@ -115,7 +132,7 @@ z_get_plan(planId: "PLAN-001")
 → plan.relatedAnswers (연결된 Answer 목록)
 ```
 
-#### 2. Task 생성 (Plan 기반)
+#### 3. Task 생성 (Plan 기반)
 ```
 z_create_task(
   description: plan.title,
@@ -124,14 +141,14 @@ z_create_task(
 → taskId: task-001
 ```
 
-#### 3. Plan-Task 연결
+#### 4. Plan-Task 연결
 ```
 z_link_plan_to_task(planId: "PLAN-001", taskId: "task-001")
 → Plan 상태가 in_progress로 변경
 → Plan의 linkedTasks에 task-001 추가
 ```
 
-#### 4. 관련 Answer 연결 (Plan에 Answer가 있는 경우)
+#### 5. 관련 Answer 연결 (Plan에 Answer가 있는 경우)
 ```
 # Plan의 relatedAnswers에서 Answer ID 확인 후 연결
 for answerId in plan.relatedAnswers:
@@ -140,7 +157,13 @@ for answerId in plan.relatedAnswers:
 
 ### C. Answer 기반 Task (answer-XXX 참조 시)
 
-#### 1. Answer 조회
+#### 1. 관련 Lesson 검색 (필수)
+```
+z_search_lessons(query: "Answer 내용 관련 키워드")
+→ 관련 lessons 참조
+```
+
+#### 2. Answer 조회
 ```
 사용자: /task answer-001 내용대로 수정해줘
 
@@ -149,7 +172,7 @@ z_get_answer(answerId: "answer-001")
 → answer.relatedPlans (연결된 Plan 목록)
 ```
 
-#### 2. Task 생성
+#### 3. Task 생성
 ```
 z_create_task(
   description: "answer-001 기반 수정",
@@ -158,7 +181,7 @@ z_create_task(
 → taskId: task-001
 ```
 
-#### 3. Answer-Task 연결
+#### 4. Answer-Task 연결
 ```
 z_link_answer_to_task(answerId: "answer-001", taskId: "task-001")
 → 양방향 연결됨
@@ -277,6 +300,7 @@ answer-001 분석 결과 기반 성능 수정 완료
 ## 주의사항
 
 - **z_* MCP 도구만 사용** (기본 도구 금지)
+- **⚠️ Lesson 검색 필수**: 작업 시작 전 반드시 z_search_lessons 호출
 - `PLAN-XXX` 입력 시 해당 Plan 기반으로 Task 생성
 - `answer-XXX` 참조 시 해당 Answer와 연결
 - 세션 컨텍스트 최소화: 상세 내용은 파일에 저장

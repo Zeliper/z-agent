@@ -38,6 +38,7 @@ claude mcp list
 | `/ask` | 질문 및 답변 저장 - 나중에 참조 가능 |
 | `/planning` | 계획 수립 - Answer를 참조하여 Plan 생성 |
 | `/list` | Task, Plan, Lesson, Answer 통합 조회 |
+| `/err` | 에러 자동 수정 - 빌드/테스트/린트 에러 수정 후 Lesson 생성 |
 | `/clear_task` | 완료된 Task, Plan 등 정리 - 자연어로 정리 대상 지정 |
 
 ## 사용 가능한 도구

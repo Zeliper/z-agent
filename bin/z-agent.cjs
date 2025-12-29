@@ -139,6 +139,7 @@ function init() {
   log('  /ask <question>        - Ask a question');
   log('  /planning <plan>       - Create a plan');
   log('  /list                  - View all tasks, plans, lessons');
+  log('  /err [command]         - Auto-fix errors and create lessons');
   log('  /clear_task            - Cleanup completed items\n');
 
   log('📖 See .z-agent/README.md for more details\n', 'dim');
