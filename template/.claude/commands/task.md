@@ -264,10 +264,30 @@ z_update_todo(taskId, 1, "in_progress")
 z_update_todo(taskId, 2, "in_progress")
 z_update_todo(taskId, 3, "in_progress")
 
-# 4. Task tool을 하나의 메시지에서 병렬로 호출
-# (각 프롬프트를 별도의 Task tool call로 실행)
+# 4. Task tool을 하나의 응답에서 동시 호출 (병렬 실행)
+# ⚠️ 중요: 반드시 하나의 응답에서 여러 Task tool call을 보내야 병렬 실행됨
+# 순차적으로 하나씩 호출하면 병렬이 아님!
 
-# 5. 각 결과 저장 및 완료 처리
+# 예시 (하나의 응답에서):
+<function_calls>
+<invoke name="Task">
+  <parameter name="subagent_type">general-purpose</parameter>
+  <parameter name="model">sonnet</parameter>
+  <parameter name="prompt">TODO 1: API 수정...</parameter>
+</invoke>
+<invoke name="Task">
+  <parameter name="subagent_type">general-purpose</parameter>
+  <parameter name="model">sonnet</parameter>
+  <parameter name="prompt">TODO 2: UI 수정...</parameter>
+</invoke>
+<invoke name="Task">
+  <parameter name="subagent_type">general-purpose</parameter>
+  <parameter name="model">haiku</parameter>
+  <parameter name="prompt">TODO 3: 테스트 추가...</parameter>
+</invoke>
+</function_calls>
+
+# 5. 모든 Task 완료 후, 각 결과 저장 및 완료 처리
 z_save_todo_result(taskId, 1, "complete", summary, details, changedFiles)
 z_save_todo_result(taskId, 2, "complete", summary, details, changedFiles)
 z_save_todo_result(taskId, 3, "complete", summary, details, changedFiles)
