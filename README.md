@@ -40,6 +40,8 @@ claude mcp list
 | `/list` | Task, Plan, Lesson, Answer 통합 조회 |
 | `/err` | 에러 자동 수정 - 빌드/테스트/린트 에러 수정 후 Lesson 생성 |
 | `/clear_task` | 완료된 Task, Plan 등 정리 - 자연어로 정리 대상 지정 |
+| `/z_memory` | 프로젝트 메모리 관리 - CRUD, 자연어 기반 |
+| `/z_lesson` | Lessons Learned 관리 - CRUD, 자연어 기반 |
 
 ## 사용 가능한 도구
 
@@ -62,7 +64,21 @@ claude mcp list
 |------|------|
 | `z_search_lessons` | 관련 Lesson 검색 |
 | `z_record_lesson` | 새 Lesson 기록 |
+| `z_get_lesson` | Lesson 상세 조회 |
+| `z_update_lesson` | Lesson 수정 |
 | `z_list_lessons` | Lesson 목록 조회 |
+| `z_delete_lesson` | Lesson 삭제 |
+
+### Memory 관리
+
+| 도구 | 설명 |
+|------|------|
+| `z_add_memory` | 프로젝트 메모리 추가 |
+| `z_get_memory` | 메모리 상세 조회 |
+| `z_list_memories` | 메모리 목록 조회 |
+| `z_search_memories` | 메모리 검색 |
+| `z_update_memory` | 메모리 수정 |
+| `z_delete_memory` | 메모리 삭제 |
 
 ### Plan 관리
 
@@ -120,30 +136,34 @@ claude mcp list
 ### /task 명령어 처리 흐름
 
 ```
-1. z_analyze_difficulty로 난이도 분석
+1. z_list_memories로 프로젝트 Memory 조회 (필수!)
 2. z_search_lessons로 관련 Lesson 검색
-3. z_create_task로 Task 생성
-4. 각 TODO에 대해:
+3. z_analyze_difficulty로 난이도 분석
+4. z_create_task로 Task 생성
+5. 각 TODO에 대해:
    a. z_update_todo로 상태를 in_progress로 변경
    b. z_get_agent_prompt로 적절한 모델 프롬프트 획득
    c. Task tool로 해당 모델에 작업 위임
    d. z_save_todo_result로 결과 저장
    e. z_update_todo로 상태를 complete로 변경
-5. z_generate_summary로 최종 요약 생성
-6. (선택) z_record_lesson으로 Lesson 기록
+6. z_generate_summary로 최종 요약 생성
+7. (선택) z_record_lesson으로 Lesson 기록
 ```
 
 ### /ask → /planning → /task 흐름
 
 ```
 1. /ask: 질문에 대한 답변 조사 및 저장
+   - z_list_memories로 프로젝트 컨텍스트 확인
    - z_save_answer로 결과 저장
 
 2. /planning: Answer를 참조하여 계획 수립
+   - z_list_memories로 프로젝트 컨텍스트 확인
    - z_create_plan으로 Plan 생성
    - z_link_answer_to_plan으로 연결
 
 3. /task: Plan을 기반으로 작업 실행
+   - z_list_memories로 프로젝트 컨텍스트 확인
    - z_link_plan_to_task로 연결
 ```
 
@@ -170,6 +190,8 @@ claude mcp list
 │   └── answer-001.md
 ├── lessons/                 # Lessons Learned
 │   └── lesson-001.md
+├── memory/                  # 프로젝트 메모리
+│   └── mem-001.md
 ├── agents/                  # Agent 프롬프트 참조
 ├── skills/                  # Skill 정의 참조
 ├── templates/               # 파일 템플릿

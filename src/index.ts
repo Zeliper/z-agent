@@ -42,6 +42,15 @@ interface LessonMeta {
   summary: string;
 }
 
+interface MemoryMeta {
+  memoryId: string;
+  content: string;
+  tags: string[];
+  priority: "high" | "medium" | "low";
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface PlanMeta {
   planId: string;
   title: string;
@@ -80,7 +89,7 @@ function getZAgentRoot(): string {
 
 function ensureDirectories(): void {
   const root = getZAgentRoot();
-  const dirs = ["tasks", "lessons", "scripts", "agents", "skills", "templates", "plans", "answers", "temp"];
+  const dirs = ["tasks", "lessons", "scripts", "agents", "skills", "templates", "plans", "answers", "temp", "memory"];
 
   for (const dir of dirs) {
     const dirPath = path.join(root, dir);
@@ -982,6 +991,298 @@ ${solution}
   fs.writeFileSync(filePath, content, "utf-8");
 
   return lessonId;
+}
+
+// Get a specific lesson by ID
+function getLesson(lessonId: string): { found: boolean; lesson?: LessonMeta & { problem: string; solution: string; conditions?: string; warnings?: string; relatedTasks: string[]; useCount: number } } {
+  const lessonPath = path.join(getZAgentRoot(), "lessons", `${lessonId}.md`);
+
+  if (!fs.existsSync(lessonPath)) {
+    return { found: false };
+  }
+
+  const content = fs.readFileSync(lessonPath, "utf-8").replace(/\r\n/g, "\n");
+
+  const categoryMatch = content.match(/category:\s*(\w+)/);
+  const tagsMatch = content.match(/tags:\s*\n((?:\s*-\s*.+\n)+)/);
+  const problemMatch = content.match(/# 문제 상황\n([\s\S]*?)(?=\n# |$)/);
+  const solutionMatch = content.match(/# 해결 방안\n([\s\S]*?)(?=\n# |$)/);
+  const conditionsMatch = content.match(/# 적용 조건\n([\s\S]*?)(?=\n# |$)/);
+  const warningsMatch = content.match(/# 주의 사항\n([\s\S]*?)(?=\n# |$)/);
+  const relatedTasksMatch = content.match(/relatedTasks:\s*\[(.*?)\]/);
+  const useCountMatch = content.match(/useCount:\s*(\d+)/);
+
+  const category = categoryMatch?.[1] || "";
+  const tags = tagsMatch?.[1]?.match(/-\s*(.+)/g)?.map(t => t.replace(/^-\s*/, "").trim()) || [];
+  const problem = problemMatch?.[1]?.trim() || "";
+  const solution = solutionMatch?.[1]?.trim() || "";
+  const conditions = conditionsMatch?.[1]?.trim();
+  const warnings = warningsMatch?.[1]?.trim();
+  const relatedTasks = relatedTasksMatch?.[1]?.match(/"([^"]+)"/g)?.map(t => t.replace(/"/g, "")) || [];
+  const useCount = parseInt(useCountMatch?.[1] || "0");
+
+  return {
+    found: true,
+    lesson: {
+      lessonId,
+      category,
+      tags,
+      summary: problem.slice(0, 100),
+      problem,
+      solution,
+      conditions,
+      warnings,
+      relatedTasks,
+      useCount
+    }
+  };
+}
+
+// Update an existing lesson
+function updateLesson(
+  lessonId: string,
+  updates: {
+    category?: string;
+    problem?: string;
+    solution?: string;
+    conditions?: string;
+    warnings?: string;
+    tags?: string[];
+    relatedTasks?: string[];
+  }
+): { success: boolean; message: string } {
+  const lessonPath = path.join(getZAgentRoot(), "lessons", `${lessonId}.md`);
+
+  if (!fs.existsSync(lessonPath)) {
+    return { success: false, message: `Lesson ${lessonId} not found` };
+  }
+
+  let content = fs.readFileSync(lessonPath, "utf-8").replace(/\r\n/g, "\n");
+  const now = new Date().toISOString();
+
+  // Update updatedAt
+  content = content.replace(/updatedAt:\s*.+/, `updatedAt: ${now}`);
+
+  if (updates.category) {
+    content = content.replace(/category:\s*\w+/, `category: ${updates.category}`);
+  }
+
+  if (updates.tags) {
+    const tagsStr = updates.tags.map(t => `  - ${t}`).join("\n");
+    content = content.replace(/tags:\s*\n((?:\s*-\s*.+\n)+)/, `tags:\n${tagsStr}\n`);
+  }
+
+  if (updates.relatedTasks) {
+    const tasksStr = updates.relatedTasks.map(t => `"${t}"`).join(", ");
+    content = content.replace(/relatedTasks:\s*\[.*?\]/, `relatedTasks: [${tasksStr}]`);
+  }
+
+  if (updates.problem) {
+    content = content.replace(/# 문제 상황\n[\s\S]*?(?=\n# )/, `# 문제 상황\n${updates.problem}\n\n`);
+  }
+
+  if (updates.solution) {
+    content = content.replace(/# 해결 방안\n[\s\S]*?(?=\n# )/, `# 해결 방안\n${updates.solution}\n\n`);
+  }
+
+  if (updates.conditions) {
+    content = content.replace(/# 적용 조건\n[\s\S]*?(?=\n# |$)/, `# 적용 조건\n${updates.conditions}\n\n`);
+  }
+
+  if (updates.warnings) {
+    content = content.replace(/# 주의 사항\n[\s\S]*$/, `# 주의 사항\n${updates.warnings}\n`);
+  }
+
+  fs.writeFileSync(lessonPath, content, "utf-8");
+  return { success: true, message: `Lesson ${lessonId} updated` };
+}
+
+// ===== Memory Functions =====
+
+function getNextMemoryId(): string {
+  const memoryDir = path.join(getZAgentRoot(), "memory");
+  if (!fs.existsSync(memoryDir)) {
+    return "mem-001";
+  }
+
+  const files = fs.readdirSync(memoryDir).filter((f) => f.match(/^mem-\d+\.md$/));
+  if (files.length === 0) {
+    return "mem-001";
+  }
+
+  const maxNum = Math.max(
+    ...files.map((f) => parseInt(f.match(/mem-(\d+)\.md/)?.[1] || "0"))
+  );
+  return `mem-${String(maxNum + 1).padStart(3, "0")}`;
+}
+
+function addMemory(
+  content: string,
+  tags: string[] = [],
+  priority: "high" | "medium" | "low" = "medium"
+): { memoryId: string; filePath: string } {
+  ensureDirectories();
+  const memoryId = getNextMemoryId();
+  const now = new Date().toISOString();
+
+  const fileContent = `---
+memoryId: ${memoryId}
+createdAt: ${now}
+updatedAt: ${now}
+priority: ${priority}
+tags:
+${tags.map(t => `  - ${t}`).join("\n") || "  # (none)"}
+---
+
+# 내용
+${content}
+`;
+
+  const filePath = path.join(getZAgentRoot(), "memory", `${memoryId}.md`);
+  fs.writeFileSync(filePath, fileContent, "utf-8");
+
+  return { memoryId, filePath };
+}
+
+function getMemory(memoryId: string): { found: boolean; memory?: MemoryMeta } {
+  const memoryPath = path.join(getZAgentRoot(), "memory", `${memoryId}.md`);
+
+  if (!fs.existsSync(memoryPath)) {
+    return { found: false };
+  }
+
+  const fileContent = fs.readFileSync(memoryPath, "utf-8").replace(/\r\n/g, "\n");
+
+  const priorityMatch = fileContent.match(/priority:\s*(high|medium|low)/);
+  const tagsMatch = fileContent.match(/tags:\s*\n((?:\s*-\s*.+\n)*)/);
+  const createdAtMatch = fileContent.match(/createdAt:\s*(.+)/);
+  const updatedAtMatch = fileContent.match(/updatedAt:\s*(.+)/);
+  const contentMatch = fileContent.match(/# 내용\n([\s\S]*?)$/);
+
+  const priority = (priorityMatch?.[1] || "medium") as "high" | "medium" | "low";
+  const tags = tagsMatch?.[1]?.match(/-\s*(.+)/g)?.map(t => t.replace(/^-\s*/, "").trim()).filter(t => t && !t.startsWith("#")) || [];
+  const createdAt = createdAtMatch?.[1]?.trim() || "";
+  const updatedAt = updatedAtMatch?.[1]?.trim() || "";
+  const content = contentMatch?.[1]?.trim() || "";
+
+  return {
+    found: true,
+    memory: {
+      memoryId,
+      content,
+      tags,
+      priority,
+      createdAt,
+      updatedAt
+    }
+  };
+}
+
+function getAllMemories(): MemoryMeta[] {
+  const memoryDir = path.join(getZAgentRoot(), "memory");
+
+  if (!fs.existsSync(memoryDir)) {
+    return [];
+  }
+
+  const files = fs.readdirSync(memoryDir).filter((f) => f.match(/^mem-\d+\.md$/));
+  const memories: MemoryMeta[] = [];
+
+  for (const file of files) {
+    const memoryId = file.replace(".md", "");
+    const result = getMemory(memoryId);
+    if (result.found && result.memory) {
+      memories.push(result.memory);
+    }
+  }
+
+  // Sort by priority (high > medium > low) then by updatedAt
+  const priorityOrder = { high: 0, medium: 1, low: 2 };
+  return memories.sort((a, b) => {
+    const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
+    if (priorityDiff !== 0) return priorityDiff;
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+  });
+}
+
+function updateMemory(
+  memoryId: string,
+  updates: {
+    content?: string;
+    tags?: string[];
+    priority?: "high" | "medium" | "low";
+  }
+): { success: boolean; message: string } {
+  const memoryPath = path.join(getZAgentRoot(), "memory", `${memoryId}.md`);
+
+  if (!fs.existsSync(memoryPath)) {
+    return { success: false, message: `Memory ${memoryId} not found` };
+  }
+
+  let fileContent = fs.readFileSync(memoryPath, "utf-8").replace(/\r\n/g, "\n");
+  const now = new Date().toISOString();
+
+  // Update updatedAt
+  fileContent = fileContent.replace(/updatedAt:\s*.+/, `updatedAt: ${now}`);
+
+  if (updates.priority) {
+    fileContent = fileContent.replace(/priority:\s*(high|medium|low)/, `priority: ${updates.priority}`);
+  }
+
+  if (updates.tags) {
+    const tagsStr = updates.tags.length > 0
+      ? updates.tags.map(t => `  - ${t}`).join("\n")
+      : "  # (none)";
+    fileContent = fileContent.replace(/tags:\s*\n((?:\s*-\s*.+\n)*|(?:\s*#\s*.+\n)*)/, `tags:\n${tagsStr}\n`);
+  }
+
+  if (updates.content) {
+    fileContent = fileContent.replace(/# 내용\n[\s\S]*$/, `# 내용\n${updates.content}\n`);
+  }
+
+  fs.writeFileSync(memoryPath, fileContent, "utf-8");
+  return { success: true, message: `Memory ${memoryId} updated` };
+}
+
+function deleteMemory(memoryId: string): { success: boolean; message: string } {
+  const memoryPath = path.join(getZAgentRoot(), "memory", `${memoryId}.md`);
+
+  if (!fs.existsSync(memoryPath)) {
+    return { success: false, message: `Memory ${memoryId} not found` };
+  }
+
+  fs.unlinkSync(memoryPath);
+  return { success: true, message: `Memory ${memoryId} deleted` };
+}
+
+function searchMemories(query: string, limit: number = 10): MemoryMeta[] {
+  const memories = getAllMemories();
+  const queryLower = query.toLowerCase();
+  const queryWords = queryLower.split(/\s+/);
+
+  const results: (MemoryMeta & { score: number })[] = [];
+
+  for (const memory of memories) {
+    let score = 0;
+
+    // Priority bonus
+    if (memory.priority === "high") score += 5;
+    else if (memory.priority === "medium") score += 2;
+
+    for (const word of queryWords) {
+      if (memory.tags.some(t => t.toLowerCase().includes(word))) score += 3;
+      if (memory.content.toLowerCase().includes(word)) score += 1;
+    }
+
+    if (score > 0) {
+      results.push({ ...memory, score });
+    }
+  }
+
+  return results
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(({ score, ...rest }) => rest);
 }
 
 // Delete a task and its todo directory
@@ -2577,6 +2878,174 @@ const tools: Tool[] = [
       required: ["lessonId"],
     },
   },
+  // ===== Lesson CRUD (추가) =====
+  {
+    name: "z_get_lesson",
+    description: "특정 Lesson의 상세 내용을 조회합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lessonId: {
+          type: "string",
+          description: "조회할 Lesson ID (예: lesson-001)",
+        },
+      },
+      required: ["lessonId"],
+    },
+  },
+  {
+    name: "z_update_lesson",
+    description: "기존 Lesson을 수정합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lessonId: {
+          type: "string",
+          description: "수정할 Lesson ID (예: lesson-001)",
+        },
+        category: {
+          type: "string",
+          enum: ["performance", "security", "architecture", "debugging", "best-practice"],
+          description: "Lesson 카테고리 (선택)",
+        },
+        problem: {
+          type: "string",
+          description: "문제 상황 설명 (선택)",
+        },
+        solution: {
+          type: "string",
+          description: "해결 방안 (선택)",
+        },
+        conditions: {
+          type: "string",
+          description: "적용 조건 (선택)",
+        },
+        warnings: {
+          type: "string",
+          description: "주의 사항 (선택)",
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "태그 목록 (선택)",
+        },
+        relatedTasks: {
+          type: "array",
+          items: { type: "string" },
+          description: "관련 Task ID 목록 (선택)",
+        },
+      },
+      required: ["lessonId"],
+    },
+  },
+  // ===== Memory CRUD =====
+  {
+    name: "z_add_memory",
+    description: "프로젝트 메모리를 추가합니다. /task, /ask, /planning 에서 자동으로 참조됩니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        content: {
+          type: "string",
+          description: "메모리 내용 (프로젝트 특기사항, 컨벤션, 중요 정보 등)",
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "검색용 태그 (선택)",
+        },
+        priority: {
+          type: "string",
+          enum: ["high", "medium", "low"],
+          description: "우선순위 (기본값: medium). high는 항상 참조됨.",
+        },
+      },
+      required: ["content"],
+    },
+  },
+  {
+    name: "z_get_memory",
+    description: "특정 메모리를 조회합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        memoryId: {
+          type: "string",
+          description: "메모리 ID (예: mem-001)",
+        },
+      },
+      required: ["memoryId"],
+    },
+  },
+  {
+    name: "z_list_memories",
+    description: "모든 메모리를 조회합니다. 우선순위 순으로 정렬됩니다.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "z_search_memories",
+    description: "키워드로 메모리를 검색합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "검색 키워드",
+        },
+        limit: {
+          type: "number",
+          description: "최대 결과 수 (기본값: 10)",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "z_update_memory",
+    description: "메모리를 수정합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        memoryId: {
+          type: "string",
+          description: "수정할 메모리 ID (예: mem-001)",
+        },
+        content: {
+          type: "string",
+          description: "새 내용 (선택)",
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "새 태그 목록 (선택)",
+        },
+        priority: {
+          type: "string",
+          enum: ["high", "medium", "low"],
+          description: "새 우선순위 (선택)",
+        },
+      },
+      required: ["memoryId"],
+    },
+  },
+  {
+    name: "z_delete_memory",
+    description: "메모리를 삭제합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        memoryId: {
+          type: "string",
+          description: "삭제할 메모리 ID (예: mem-001)",
+        },
+      },
+      required: ["memoryId"],
+    },
+  },
   {
     name: "z_get_tasks_by_status",
     description: "상태별로 Task 목록을 조회합니다. TODO 진행 상황도 함께 표시됩니다.",
@@ -3474,6 +3943,141 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "z_delete_lesson": {
         const result = deleteLesson(args.lessonId as string);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      // ===== Lesson CRUD (추가) =====
+      case "z_get_lesson": {
+        const result = getLesson(args.lessonId as string);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "z_update_lesson": {
+        const result = updateLesson(args.lessonId as string, {
+          category: args.category as string | undefined,
+          problem: args.problem as string | undefined,
+          solution: args.solution as string | undefined,
+          conditions: args.conditions as string | undefined,
+          warnings: args.warnings as string | undefined,
+          tags: args.tags as string[] | undefined,
+          relatedTasks: args.relatedTasks as string[] | undefined,
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      // ===== Memory CRUD =====
+      case "z_add_memory": {
+        const result = addMemory(
+          args.content as string,
+          (args.tags as string[]) || [],
+          (args.priority as "high" | "medium" | "low") || "medium"
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Memory ${result.memoryId} 추가됨`,
+            },
+          ],
+        };
+      }
+
+      case "z_get_memory": {
+        const result = getMemory(args.memoryId as string);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "z_list_memories": {
+        const memories = getAllMemories();
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                count: memories.length,
+                memories: memories.map(m => ({
+                  memoryId: m.memoryId,
+                  priority: m.priority,
+                  tags: m.tags,
+                  contentPreview: m.content.slice(0, 100) + (m.content.length > 100 ? "..." : ""),
+                  updatedAt: m.updatedAt,
+                })),
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "z_search_memories": {
+        const results = searchMemories(
+          args.query as string,
+          (args.limit as number) || 10
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                query: args.query,
+                count: results.length,
+                memories: results.map(m => ({
+                  memoryId: m.memoryId,
+                  priority: m.priority,
+                  tags: m.tags,
+                  contentPreview: m.content.slice(0, 100) + (m.content.length > 100 ? "..." : ""),
+                })),
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "z_update_memory": {
+        const result = updateMemory(args.memoryId as string, {
+          content: args.content as string | undefined,
+          tags: args.tags as string[] | undefined,
+          priority: args.priority as "high" | "medium" | "low" | undefined,
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "z_delete_memory": {
+        const result = deleteMemory(args.memoryId as string);
         return {
           content: [
             {

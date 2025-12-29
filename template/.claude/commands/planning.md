@@ -29,6 +29,8 @@
 - ✅ z_get_answer (Answer 상세 조회)
 - ✅ z_get_related (관련 항목 조회)
 - ✅ z_query (통합 검색)
+- ✅ z_list_memories (Memory 목록 조회)
+- ✅ z_search_memories (Memory 검색)
 
 ## 상호 참조 기능
 
@@ -62,6 +64,24 @@ z_get_related(entityType: "answer", entityId: "answer-001")
 ```
 
 ## 실행 흐름
+
+### 0. 프로젝트 Memory 조회 (필수 - 가장 먼저!)
+
+**⚠️ 모든 Planning은 Memory 조회로 시작해야 합니다.**
+
+```
+z_list_memories()
+→ 프로젝트 컨벤션, 특기사항, 중요 정보 확인
+→ 특히 priority: high 항목은 반드시 고려
+```
+
+**Memory가 있는 경우:**
+```
+📋 프로젝트 Memory 참조:
+- mem-001: [high] Next.js 14 App Router 사용
+- mem-002: [medium] API는 /api/v1 경로 사용
+→ 해당 정보를 계획 수립에 반영
+```
 
 ### 1. 입력 분석 및 참조 확인
 ```

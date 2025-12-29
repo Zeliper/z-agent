@@ -40,6 +40,8 @@
 - ✅ z_link_answer_to_task (Answer 연결)
 - ✅ z_get_related (관련 항목 조회)
 - ✅ z_query (통합 검색)
+- ✅ z_list_memories (Memory 목록 조회)
+- ✅ z_search_memories (Memory 검색)
 
 ## 상호 참조 기능
 
@@ -79,9 +81,27 @@ z_get_related(entityType: "task", entityId: "task-001")
 
 ### A. 일반 Task (기존 방식)
 
-#### 1. 관련 Lesson 검색 (필수 - 가장 먼저!)
+#### 0. 프로젝트 Memory 조회 (필수 - 가장 먼저!)
 
-**⚠️ 모든 Task는 Lesson 검색으로 시작해야 합니다.**
+**⚠️ 모든 Task는 Memory 조회로 시작해야 합니다.**
+
+```
+z_list_memories()
+→ 프로젝트 컨벤션, 특기사항, 중요 정보 확인
+→ 특히 priority: high 항목은 반드시 고려
+```
+
+**Memory가 있는 경우:**
+```
+📋 프로젝트 Memory 참조:
+- mem-001: [high] Next.js 14 App Router 사용
+- mem-002: [medium] API는 /api/v1 경로 사용
+→ 해당 정보를 작업에 반영
+```
+
+#### 1. 관련 Lesson 검색 (필수)
+
+**⚠️ Memory 확인 후 Lesson도 검색합니다.**
 
 ```
 z_search_lessons(query: "핵심 키워드")
