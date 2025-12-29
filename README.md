@@ -38,6 +38,7 @@ claude mcp list
 | `/ask` | 질문 및 답변 저장 - 나중에 참조 가능 |
 | `/planning` | 계획 수립 - Answer를 참조하여 Plan 생성 |
 | `/list` | Task, Plan, Lesson, Answer 통합 조회 |
+| `/clear_task` | 완료된 Task, Plan 등 정리 - 자연어로 정리 대상 지정 |
 
 ## 사용 가능한 도구
 
@@ -88,6 +89,19 @@ claude mcp list
 | `z_query` | Task, Plan, Lesson, Answer 통합 검색 |
 | `z_get_related` | 특정 엔티티와 연결된 항목 조회 |
 | `z_list_tasks` | Task 목록 조회 |
+
+### 정리 도구
+
+| 도구 | 설명 |
+|------|------|
+| `z_cleanup_preview` | 정리 대상 미리보기 |
+| `z_get_tasks_by_status` | 상태별 Task 조회 (TODO 진행률 포함) |
+| `z_get_plans_by_status` | 상태별 Plan 조회 (미완료 Task 경고) |
+| `z_delete_task` | Task 및 관련 TODO 파일 삭제 |
+| `z_delete_plan` | Plan 삭제 (연결된 Task 함께 삭제 옵션) |
+| `z_delete_answer` | Answer 삭제 |
+| `z_delete_lesson` | Lesson 삭제 |
+| `z_delete_completed_tasks` | 완료된 Task 일괄 삭제 |
 
 ### 파일 시스템 (Context 절약)
 

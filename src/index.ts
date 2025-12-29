@@ -262,7 +262,7 @@ function updatePlan(
     return false;
   }
 
-  let fileContent = fs.readFileSync(filePath, "utf-8");
+  let fileContent = fs.readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
 
   // Update status in frontmatter
   if (updates.status) {
@@ -309,7 +309,7 @@ function getPlan(planId: string): { plan: PlanMeta | null; content: string } {
     return { plan: null, content: "" };
   }
 
-  const fileContent = fs.readFileSync(filePath, "utf-8");
+  const fileContent = fs.readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
 
   // Parse frontmatter
   const titleMatch = fileContent.match(/title: "(.+)"/);
@@ -384,7 +384,7 @@ function linkPlanToTask(planId: string, taskId: string): boolean {
     return false;
   }
 
-  let content = fs.readFileSync(filePath, "utf-8");
+  let content = fs.readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
 
   // Update linkedTasks in frontmatter
   const linkedMatch = content.match(/linkedTasks: \[(.*)\]/);
@@ -428,7 +428,7 @@ function getAnswer(answerId: string): {
     return { answer: null, content: "" };
   }
 
-  const fileContent = fs.readFileSync(filePath, "utf-8");
+  const fileContent = fs.readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
 
   const questionMatch = fileContent.match(/question:\s*"(.+?)"/);
   const summaryMatch = fileContent.match(/summary:\s*"(.+?)"/);
@@ -473,7 +473,7 @@ function linkAnswerToPlan(answerId: string, planId: string): boolean {
   }
 
   // Update answer's relatedPlans
-  let answerContent = fs.readFileSync(answerPath, "utf-8");
+  let answerContent = fs.readFileSync(answerPath, "utf-8").replace(/\r\n/g, "\n");
   const answerPlansMatch = answerContent.match(/relatedPlans:\s*\[(.*)\]/);
   if (answerPlansMatch) {
     const existing = answerPlansMatch[1]
@@ -488,7 +488,7 @@ function linkAnswerToPlan(answerId: string, planId: string): boolean {
   }
 
   // Update plan's relatedAnswers
-  let planContent = fs.readFileSync(planPath, "utf-8");
+  let planContent = fs.readFileSync(planPath, "utf-8").replace(/\r\n/g, "\n");
   const planAnswersMatch = planContent.match(/relatedAnswers:\s*\[(.*)\]/);
   if (planAnswersMatch) {
     const existing = planAnswersMatch[1]
@@ -522,7 +522,7 @@ function linkAnswerToTask(answerId: string, taskId: string): boolean {
   }
 
   // Update answer's relatedTasks
-  let answerContent = fs.readFileSync(answerPath, "utf-8");
+  let answerContent = fs.readFileSync(answerPath, "utf-8").replace(/\r\n/g, "\n");
   const answerTasksMatch = answerContent.match(/relatedTasks:\s*\[(.*)\]/);
   if (answerTasksMatch) {
     const existing = answerTasksMatch[1]
@@ -537,7 +537,7 @@ function linkAnswerToTask(answerId: string, taskId: string): boolean {
   }
 
   // Update task's relatedAnswers (add field if not exists)
-  let taskContent = fs.readFileSync(taskPath, "utf-8");
+  let taskContent = fs.readFileSync(taskPath, "utf-8").replace(/\r\n/g, "\n");
   const taskAnswersMatch = taskContent.match(/relatedAnswers:\s*\[(.*)\]/);
   if (taskAnswersMatch) {
     const existing = taskAnswersMatch[1]
@@ -584,7 +584,7 @@ function getRelatedItems(entityType: "answer" | "plan" | "task", entityId: strin
       // Parse relatedAnswers from file
       const filePath = path.join(getZAgentRoot(), "plans", `${entityId}.md`);
       if (fs.existsSync(filePath)) {
-        const content = fs.readFileSync(filePath, "utf-8");
+        const content = fs.readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
         const answersMatch = content.match(/relatedAnswers:\s*\[(.*)\]/);
         if (answersMatch?.[1]) {
           result.answers = answersMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean);
@@ -598,7 +598,7 @@ function getRelatedItems(entityType: "answer" | "plan" | "task", entityId: strin
       // Parse relatedAnswers from file
       const filePath = path.join(getZAgentRoot(), "tasks", `${entityId}.md`);
       if (fs.existsSync(filePath)) {
-        const content = fs.readFileSync(filePath, "utf-8");
+        const content = fs.readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
         const answersMatch = content.match(/relatedAnswers:\s*\[(.*)\]/);
         if (answersMatch?.[1]) {
           result.answers = answersMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean);
@@ -801,7 +801,7 @@ function updateTodoFile(
   }
 
   const now = new Date().toISOString();
-  let content = fs.readFileSync(todoFilePath, "utf-8");
+  let content = fs.readFileSync(todoFilePath, "utf-8").replace(/\r\n/g, "\n");
   const emoji = STATUS_EMOJI[newStatus] || "⏳";
 
   // Update status in frontmatter
@@ -830,7 +830,7 @@ function updateTodoStatus(
   }
 
   let content = fs.readFileSync(filePath, "utf-8");
-  const lines = content.split("\n");
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
   let updated = false;
 
   for (let i = 0; i < lines.length; i++) {
@@ -858,7 +858,7 @@ function getTaskStatus(taskId: string): { task: TaskMeta | null; todos: TodoItem
     return { task: null, todos: [] };
   }
 
-  const content = fs.readFileSync(filePath, "utf-8");
+  const content = fs.readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
   const todos: TodoItem[] = [];
 
   // Parse TODOs
@@ -904,7 +904,7 @@ function searchLessons(query: string, limit: number = 5): LessonMeta[] {
   const queryWords = queryLower.split(/\s+/);
 
   for (const file of files) {
-    const content = fs.readFileSync(path.join(lessonsDir, file), "utf-8");
+    const content = fs.readFileSync(path.join(lessonsDir, file), "utf-8").replace(/\r\n/g, "\n");
     const lessonId = file.replace(".md", "");
 
     // Extract metadata
@@ -974,6 +974,281 @@ ${solution}
   fs.writeFileSync(filePath, content, "utf-8");
 
   return lessonId;
+}
+
+// Delete a task and its todo directory
+function deleteTask(taskId: string): { success: boolean; message: string; deletedFiles: string[] } {
+  const deletedFiles: string[] = [];
+
+  // Delete task file
+  const taskPath = path.join(getZAgentRoot(), "tasks", `${taskId}.md`);
+  if (fs.existsSync(taskPath)) {
+    fs.unlinkSync(taskPath);
+    deletedFiles.push(taskPath);
+  }
+
+  // Delete task todo directory
+  const todoDir = path.join(getZAgentRoot(), taskId);
+  if (fs.existsSync(todoDir)) {
+    const files = fs.readdirSync(todoDir);
+    for (const file of files) {
+      const filePath = path.join(todoDir, file);
+      fs.unlinkSync(filePath);
+      deletedFiles.push(filePath);
+    }
+    fs.rmdirSync(todoDir);
+    deletedFiles.push(todoDir);
+  }
+
+  if (deletedFiles.length === 0) {
+    return { success: false, message: `Task ${taskId}를 찾을 수 없습니다.`, deletedFiles: [] };
+  }
+
+  return { success: true, message: `Task ${taskId} 삭제 완료`, deletedFiles };
+}
+
+// Delete a plan
+function deletePlan(planId: string): { success: boolean; message: string; deletedFiles: string[] } {
+  const planPath = path.join(getZAgentRoot(), "plans", `${planId}.md`);
+
+  if (!fs.existsSync(planPath)) {
+    return { success: false, message: `Plan ${planId}를 찾을 수 없습니다.`, deletedFiles: [] };
+  }
+
+  fs.unlinkSync(planPath);
+  return { success: true, message: `Plan ${planId} 삭제 완료`, deletedFiles: [planPath] };
+}
+
+// Delete an answer
+function deleteAnswer(answerId: string): { success: boolean; message: string; deletedFiles: string[] } {
+  const answerPath = path.join(getZAgentRoot(), "answers", `${answerId}.md`);
+
+  if (!fs.existsSync(answerPath)) {
+    return { success: false, message: `Answer ${answerId}를 찾을 수 없습니다.`, deletedFiles: [] };
+  }
+
+  fs.unlinkSync(answerPath);
+  return { success: true, message: `Answer ${answerId} 삭제 완료`, deletedFiles: [answerPath] };
+}
+
+// Delete a lesson
+function deleteLesson(lessonId: string): { success: boolean; message: string; deletedFiles: string[] } {
+  const lessonPath = path.join(getZAgentRoot(), "lessons", `${lessonId}.md`);
+
+  if (!fs.existsSync(lessonPath)) {
+    return { success: false, message: `Lesson ${lessonId}를 찾을 수 없습니다.`, deletedFiles: [] };
+  }
+
+  fs.unlinkSync(lessonPath);
+  return { success: true, message: `Lesson ${lessonId} 삭제 완료`, deletedFiles: [lessonPath] };
+}
+
+// Get tasks by status with detailed info
+function getTasksByStatus(status: string): Array<{
+  taskId: string;
+  taskDesc: string;
+  status: string;
+  difficulty: string;
+  todoStats: { total: number; completed: number; pending: number };
+  linkedPlan?: string;
+}> {
+  const tasksDir = path.join(getZAgentRoot(), "tasks");
+
+  if (!fs.existsSync(tasksDir)) {
+    return [];
+  }
+
+  const files = fs.readdirSync(tasksDir).filter((f) => f.match(/^task-\d+\.md$/));
+  const tasks: Array<{
+    taskId: string;
+    taskDesc: string;
+    status: string;
+    difficulty: string;
+    todoStats: { total: number; completed: number; pending: number };
+    linkedPlan?: string;
+  }> = [];
+
+  for (const file of files) {
+    const content = fs.readFileSync(path.join(tasksDir, file), "utf-8").replace(/\r\n/g, "\n");
+    const taskId = file.replace(".md", "");
+
+    const statusMatch = content.match(/status:\s*(\w+)/);
+    const taskStatus = statusMatch?.[1] || "pending";
+
+    if (status !== "all" && taskStatus !== status) continue;
+
+    const taskDescMatch = content.match(/taskDesc:\s*(.+)/);
+    const difficultyMatch = content.match(/difficulty:\s*([HML])/);
+
+    // Count TODOs
+    const todoMatches = content.matchAll(/^([⏳🔄✅❌🚫])\s*-\s*\d+\./gm);
+    let total = 0, completed = 0, pending = 0;
+    for (const match of todoMatches) {
+      total++;
+      if (match[1] === "✅") completed++;
+      else pending++;
+    }
+
+    // Check for linked plan
+    const linkedPlanMatch = content.match(/linkedPlan:\s*"?([^"\n]+)"?/);
+
+    tasks.push({
+      taskId,
+      taskDesc: taskDescMatch?.[1] || "",
+      status: taskStatus,
+      difficulty: difficultyMatch?.[1] || "M",
+      todoStats: { total, completed, pending },
+      linkedPlan: linkedPlanMatch?.[1],
+    });
+  }
+
+  return tasks.sort((a, b) => a.taskId.localeCompare(b.taskId));
+}
+
+// Get plans by status with linked task info
+function getPlansByStatus(status: string): Array<{
+  planId: string;
+  title: string;
+  status: string;
+  difficulty: string;
+  linkedTasks: string[];
+  incompleteTasks: string[];
+}> {
+  const plansDir = path.join(getZAgentRoot(), "plans");
+
+  if (!fs.existsSync(plansDir)) {
+    return [];
+  }
+
+  const files = fs.readdirSync(plansDir).filter((f) => f.match(/^PLAN-\d+\.md$/));
+  const plans: Array<{
+    planId: string;
+    title: string;
+    status: string;
+    difficulty: string;
+    linkedTasks: string[];
+    incompleteTasks: string[];
+  }> = [];
+
+  for (const file of files) {
+    const content = fs.readFileSync(path.join(plansDir, file), "utf-8").replace(/\r\n/g, "\n");
+    const planId = file.replace(".md", "");
+
+    const statusMatch = content.match(/status:\s*(\w+)/);
+    const planStatus = statusMatch?.[1] || "draft";
+
+    if (status !== "all" && planStatus !== status) continue;
+
+    const titleMatch = content.match(/title:\s*"(.+?)"/);
+    const difficultyMatch = content.match(/difficulty:\s*([HML])/);
+    const linkedTasksMatch = content.match(/linkedTasks:\s*\[(.*)\]/);
+
+    const linkedTasks = linkedTasksMatch?.[1]
+      ? linkedTasksMatch[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean)
+      : [];
+
+    // Check which linked tasks are incomplete
+    const incompleteTasks: string[] = [];
+    for (const taskId of linkedTasks) {
+      const taskPath = path.join(getZAgentRoot(), "tasks", `${taskId}.md`);
+      if (fs.existsSync(taskPath)) {
+        const taskContent = fs.readFileSync(taskPath, "utf-8").replace(/\r\n/g, "\n");
+        const taskStatusMatch = taskContent.match(/status:\s*(\w+)/);
+        if (taskStatusMatch?.[1] !== "completed") {
+          incompleteTasks.push(taskId);
+        }
+      }
+    }
+
+    plans.push({
+      planId,
+      title: titleMatch?.[1] || "",
+      status: planStatus,
+      difficulty: difficultyMatch?.[1] || "M",
+      linkedTasks,
+      incompleteTasks,
+    });
+  }
+
+  return plans.sort((a, b) => a.planId.localeCompare(b.planId));
+}
+
+// Bulk delete completed tasks
+function deleteCompletedTasks(): { deletedTasks: string[]; deletedFiles: string[] } {
+  const completedTasks = getTasksByStatus("completed");
+  const deletedTasks: string[] = [];
+  const deletedFiles: string[] = [];
+
+  for (const task of completedTasks) {
+    const result = deleteTask(task.taskId);
+    if (result.success) {
+      deletedTasks.push(task.taskId);
+      deletedFiles.push(...result.deletedFiles);
+    }
+  }
+
+  return { deletedTasks, deletedFiles };
+}
+
+// Delete plan with linked tasks
+function deletePlanWithTasks(
+  planId: string,
+  deleteLinkedTasks: boolean
+): {
+  success: boolean;
+  message: string;
+  deletedPlan?: string;
+  deletedTasks: string[];
+  deletedFiles: string[];
+  skippedTasks: string[];
+} {
+  const { plan } = getPlan(planId);
+
+  if (!plan) {
+    return {
+      success: false,
+      message: `Plan ${planId}를 찾을 수 없습니다.`,
+      deletedTasks: [],
+      deletedFiles: [],
+      skippedTasks: [],
+    };
+  }
+
+  const deletedTasks: string[] = [];
+  const deletedFiles: string[] = [];
+  const skippedTasks: string[] = [];
+
+  // Delete linked tasks if requested
+  if (deleteLinkedTasks && plan.linkedTasks.length > 0) {
+    for (const taskId of plan.linkedTasks) {
+      const result = deleteTask(taskId);
+      if (result.success) {
+        deletedTasks.push(taskId);
+        deletedFiles.push(...result.deletedFiles);
+      } else {
+        skippedTasks.push(taskId);
+      }
+    }
+  } else if (plan.linkedTasks.length > 0) {
+    skippedTasks.push(...plan.linkedTasks);
+  }
+
+  // Delete the plan
+  const planResult = deletePlan(planId);
+  if (planResult.success) {
+    deletedFiles.push(...planResult.deletedFiles);
+  }
+
+  return {
+    success: planResult.success,
+    message: planResult.success
+      ? `Plan ${planId} 삭제 완료 (Tasks: ${deletedTasks.length}개 삭제, ${skippedTasks.length}개 유지)`
+      : planResult.message,
+    deletedPlan: planResult.success ? planId : undefined,
+    deletedTasks,
+    deletedFiles,
+    skippedTasks,
+  };
 }
 
 function getAgentPrompt(difficulty: "H" | "M" | "L", todoDescription: string): string {
@@ -1121,22 +1396,35 @@ function editFile(
 
     let content = fs.readFileSync(absolutePath, "utf-8");
 
-    if (!content.includes(oldString)) {
-      return {
-        success: false,
-        message: `❌ 일치하는 문자열 없음`,
-        replacements: 0,
-      };
+    // 파일의 줄바꿈 스타일 감지 (CRLF vs LF)
+    const fileLineEnding = content.includes("\r\n") ? "\r\n" : "\n";
+
+    // oldString/newString의 줄바꿈을 파일 스타일에 맞게 정규화
+    let normalizedOldString = oldString.replace(/\r\n/g, "\n").replace(/\n/g, fileLineEnding);
+    let normalizedNewString = newString.replace(/\r\n/g, "\n").replace(/\n/g, fileLineEnding);
+
+    if (!content.includes(normalizedOldString)) {
+      // 정규화 후에도 못 찾으면 원본으로 재시도
+      if (!content.includes(oldString)) {
+        return {
+          success: false,
+          message: `❌ 일치하는 문자열 없음`,
+          replacements: 0,
+        };
+      }
+      // 원본으로 찾은 경우 정규화 안 함
+      normalizedOldString = oldString;
+      normalizedNewString = newString;
     }
 
     let replacements = 0;
     if (replaceAll) {
-      const regex = new RegExp(oldString.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
+      const regex = new RegExp(normalizedOldString.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
       replacements = (content.match(regex) || []).length;
-      content = content.replace(regex, newString);
+      content = content.replace(regex, normalizedNewString);
     } else {
       replacements = 1;
-      content = content.replace(oldString, newString);
+      content = content.replace(normalizedOldString, normalizedNewString);
     }
 
     fs.writeFileSync(absolutePath, content, "utf-8");
@@ -1166,7 +1454,7 @@ function readFile(filePath: string, offset?: number, limit?: number): { success:
       };
     }
 
-    const content = fs.readFileSync(absolutePath, "utf-8");
+    const content = fs.readFileSync(absolutePath, "utf-8").replace(/\r\n/g, "\n");
     const allLines = content.split("\n");
     const totalLines = allLines.length;
 
@@ -1416,7 +1704,7 @@ function listAnswers(keyword?: string): Array<{
   }> = [];
 
   for (const file of files) {
-    const content = fs.readFileSync(path.join(answersDir, file), "utf-8");
+    const content = fs.readFileSync(path.join(answersDir, file), "utf-8").replace(/\r\n/g, "\n");
     const answerId = file.replace(".md", "");
 
     const questionMatch = content.match(/question:\s*"(.+?)"/);
@@ -1481,7 +1769,7 @@ function listLessons(category?: string): Array<{
   }> = [];
 
   for (const file of files) {
-    const content = fs.readFileSync(path.join(lessonsDir, file), "utf-8");
+    const content = fs.readFileSync(path.join(lessonsDir, file), "utf-8").replace(/\r\n/g, "\n");
     const lessonId = file.replace(".md", "");
 
     const categoryMatch = content.match(/category:\s*(\S+)/);
@@ -2204,6 +2492,120 @@ const tools: Tool[] = [
         },
       },
       required: ["entityType", "entityId"],
+    },
+  },
+  {
+    name: "z_delete_task",
+    description: "특정 Task와 관련 TODO 파일들을 삭제합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskId: {
+          type: "string",
+          description: "삭제할 Task ID (예: task-001)",
+        },
+      },
+      required: ["taskId"],
+    },
+  },
+  {
+    name: "z_delete_plan",
+    description: "특정 Plan을 삭제합니다. 연결된 Task도 함께 삭제할 수 있습니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        planId: {
+          type: "string",
+          description: "삭제할 Plan ID (예: PLAN-001)",
+        },
+        deleteLinkedTasks: {
+          type: "boolean",
+          description: "연결된 Task도 함께 삭제할지 여부 (기본값: false)",
+        },
+      },
+      required: ["planId"],
+    },
+  },
+  {
+    name: "z_delete_answer",
+    description: "특정 Answer를 삭제합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        answerId: {
+          type: "string",
+          description: "삭제할 Answer ID (예: answer-001)",
+        },
+      },
+      required: ["answerId"],
+    },
+  },
+  {
+    name: "z_delete_lesson",
+    description: "특정 Lesson을 삭제합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lessonId: {
+          type: "string",
+          description: "삭제할 Lesson ID (예: lesson-001)",
+        },
+      },
+      required: ["lessonId"],
+    },
+  },
+  {
+    name: "z_get_tasks_by_status",
+    description: "상태별로 Task 목록을 조회합니다. TODO 진행 상황도 함께 표시됩니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["all", "pending", "in_progress", "completed", "cancelled", "blocked"],
+          description: "조회할 Task 상태 (기본값: all)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "z_get_plans_by_status",
+    description: "상태별로 Plan 목록을 조회합니다. 연결된 Task의 미완료 상태도 확인합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["all", "draft", "ready", "in_progress", "completed", "cancelled"],
+          description: "조회할 Plan 상태 (기본값: all)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "z_delete_completed_tasks",
+    description: "완료된 모든 Task와 관련 파일들을 일괄 삭제합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "z_cleanup_preview",
+    description: "정리 대상 항목들을 미리보기합니다. 실제 삭제 전 확인용입니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: {
+          type: "string",
+          enum: ["completed_tasks", "completed_plans", "all_completed"],
+          description: "미리보기 대상",
+        },
+      },
+      required: ["target"],
     },
   },
 ];
@@ -2962,6 +3364,185 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (related.answers.length === 0 && related.plans.length === 0 &&
             related.tasks.length === 0 && related.lessons.length === 0) {
           output += "연결된 항목 없음\n";
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: output,
+            },
+          ],
+        };
+      }
+
+      case "z_delete_task": {
+        const result = deleteTask(args.taskId as string);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "z_delete_plan": {
+        const result = deletePlanWithTasks(
+          args.planId as string,
+          (args.deleteLinkedTasks as boolean) || false
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "z_delete_answer": {
+        const result = deleteAnswer(args.answerId as string);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "z_delete_lesson": {
+        const result = deleteLesson(args.lessonId as string);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "z_get_tasks_by_status": {
+        const status = (args.status as string) || "all";
+        const tasks = getTasksByStatus(status);
+
+        let output = `## Task 목록 (상태: ${status})\n\n`;
+
+        if (tasks.length === 0) {
+          output += "해당하는 Task가 없습니다.\n";
+        } else {
+          for (const task of tasks) {
+            const emoji = STATUS_EMOJI[task.status] || "⏳";
+            const todoInfo = `[${task.todoStats.completed}/${task.todoStats.total}]`;
+            output += `- ${emoji} **${task.taskId}**: ${task.taskDesc} ${todoInfo}\n`;
+            if (task.linkedPlan) {
+              output += `  └ 연결된 Plan: ${task.linkedPlan}\n`;
+            }
+          }
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: output,
+            },
+          ],
+        };
+      }
+
+      case "z_get_plans_by_status": {
+        const status = (args.status as string) || "all";
+        const plans = getPlansByStatus(status);
+
+        let output = `## Plan 목록 (상태: ${status})\n\n`;
+
+        if (plans.length === 0) {
+          output += "해당하는 Plan이 없습니다.\n";
+        } else {
+          for (const plan of plans) {
+            const emoji = STATUS_EMOJI[plan.status] || "⏳";
+            output += `- ${emoji} **${plan.planId}**: ${plan.title}\n`;
+            if (plan.linkedTasks.length > 0) {
+              output += `  └ 연결된 Tasks: ${plan.linkedTasks.join(", ")}\n`;
+              if (plan.incompleteTasks.length > 0) {
+                output += `  └ ⚠️ 미완료 Tasks: ${plan.incompleteTasks.join(", ")}\n`;
+              }
+            }
+          }
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: output,
+            },
+          ],
+        };
+      }
+
+      case "z_delete_completed_tasks": {
+        const result = deleteCompletedTasks();
+
+        let output = `## 완료된 Task 정리 결과\n\n`;
+        output += `삭제된 Tasks: ${result.deletedTasks.length}개\n`;
+
+        if (result.deletedTasks.length > 0) {
+          output += `\n### 삭제된 Task 목록\n`;
+          for (const taskId of result.deletedTasks) {
+            output += `- ✅ ${taskId}\n`;
+          }
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: output,
+            },
+          ],
+        };
+      }
+
+      case "z_cleanup_preview": {
+        const target = args.target as string;
+        let output = `## 정리 미리보기: ${target}\n\n`;
+
+        if (target === "completed_tasks" || target === "all_completed") {
+          const completedTasks = getTasksByStatus("completed");
+          output += `### 완료된 Tasks (${completedTasks.length}개)\n`;
+          if (completedTasks.length === 0) {
+            output += "없음\n";
+          } else {
+            for (const task of completedTasks) {
+              output += `- ${task.taskId}: ${task.taskDesc}\n`;
+            }
+          }
+          output += "\n";
+        }
+
+        if (target === "completed_plans" || target === "all_completed") {
+          const completedPlans = getPlansByStatus("completed");
+          output += `### 완료된 Plans (${completedPlans.length}개)\n`;
+          if (completedPlans.length === 0) {
+            output += "없음\n";
+          } else {
+            for (const plan of completedPlans) {
+              output += `- ${plan.planId}: ${plan.title}\n`;
+              if (plan.linkedTasks.length > 0) {
+                output += `  └ 연결된 Tasks: ${plan.linkedTasks.join(", ")}\n`;
+              }
+              if (plan.incompleteTasks.length > 0) {
+                output += `  └ ⚠️ 미완료 Tasks: ${plan.incompleteTasks.join(", ")}\n`;
+              }
+            }
+          }
         }
 
         return {
