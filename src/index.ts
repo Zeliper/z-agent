@@ -943,6 +943,31 @@ function updateTodoStatus(
   }
 
   if (updated) {
+    // Check if all TODOs are complete to auto-update Task status
+    let allComplete = true;
+    let hasTodos = false;
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      const m = trimmedLine.match(todoRegex);
+      if (m) {
+        hasTodos = true;
+        if (m[1] !== "✅") {
+          allComplete = false;
+          break;
+        }
+      }
+    }
+
+    // Auto-update Task status if all TODOs are complete
+    if (hasTodos && allComplete) {
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith("status:")) {
+          lines[i] = "status: completed";
+          break;
+        }
+      }
+    }
+
     fs.writeFileSync(filePath, lines.join("\n"), "utf-8");
     // Also update the individual TODO file
     updateTodoFile(taskId, todoIndex, newStatus);
