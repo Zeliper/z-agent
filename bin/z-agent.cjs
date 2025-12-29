@@ -40,11 +40,11 @@ function copyDir(src, dest, options = {}) {
       copyDir(srcPath, destPath, options);
     } else {
       if (skipExisting && fs.existsSync(destPath)) {
-        log(`  skip: ${path.relative(TARGET_DIR, destPath)}`, 'dim');
+        log(`  건너뜀: ${path.relative(TARGET_DIR, destPath)}`, 'dim');
         continue;
       }
       fs.copyFileSync(srcPath, destPath);
-      log(`  create: ${path.relative(TARGET_DIR, destPath)}`, 'green');
+      log(`  생성: ${path.relative(TARGET_DIR, destPath)}`, 'green');
     }
   }
 }
@@ -92,12 +92,12 @@ function clearZAgentCache() {
 }
 
 function init() {
-  log('\n🚀 z-agent setup\n', 'blue');
+  log('\n🚀 z-agent 설정\n', 'blue');
 
   // Clear cache for next run (non-blocking, just ensures fresh version next time)
   const cleared = clearZAgentCache();
   if (cleared > 0) {
-    log(`🧹 Cleared ${cleared} cached package(s) for future updates`, 'dim');
+    log(`🧹 캐시 ${cleared}개 정리 완료 (다음 업데이트 준비)`, 'dim');
   }
 
   // 1. Copy .z-agent folder
@@ -105,17 +105,17 @@ function init() {
   const zAgentDest = path.join(TARGET_DIR, '.z-agent');
 
   if (fs.existsSync(zAgentDest)) {
-    log('⚠️  .z-agent already exists, updating...', 'yellow');
+    log('⚠️  .z-agent 폴더가 이미 존재합니다. 업데이트 중...', 'yellow');
   }
 
-  log('\n📁 Setting up .z-agent/', 'blue');
+  log('\n📁 .z-agent/ 설정 중...', 'blue');
   copyDir(zAgentSrc, zAgentDest);
 
   // 2. Copy .claude/commands only (not settings.json)
   const claudeCommandsSrc = path.join(TEMPLATE_DIR, '.claude', 'commands');
   const claudeCommandsDest = path.join(TARGET_DIR, '.claude', 'commands');
 
-  log('\n📁 Setting up .claude/commands/', 'blue');
+  log('\n📁 .claude/commands/ 설정 중...', 'blue');
   copyDir(claudeCommandsSrc, claudeCommandsDest);
 
   // 3. Create task folders if not exist
@@ -130,19 +130,19 @@ function init() {
   }
 
   // 4. Setup MCP configuration in .claude.json
-  log('\n📁 Setting up MCP configuration...', 'blue');
+  log('\n📁 MCP 설정 중...', 'blue');
   setupMcpConfig();
 
-  log('\n✅ z-agent setup complete!\n', 'green');
-  log('Available commands:', 'blue');
-  log('  /task <description>    - Start a new task');
-  log('  /ask <question>        - Ask a question');
-  log('  /planning <plan>       - Create a plan');
-  log('  /list                  - View all tasks, plans, lessons');
-  log('  /err [command]         - Auto-fix errors and create lessons');
-  log('  /clear_task            - Cleanup completed items\n');
+  log('\n✅ z-agent 설정 완료!\n', 'green');
+  log('사용 가능한 명령어:', 'blue');
+  log('  /task <설명>           - 새 작업 시작');
+  log('  /ask <질문>            - 질문하기');
+  log('  /planning <계획>       - 계획 생성');
+  log('  /list                  - 모든 Task, Plan, Lesson 보기');
+  log('  /err [명령어]          - 에러 자동 수정 및 Lesson 생성');
+  log('  /clear_task            - 완료된 항목 정리\n');
 
-  log('📖 See .z-agent/README.md for more details\n', 'dim');
+  log('📖 자세한 내용은 .z-agent/README.md 참조\n', 'dim');
 }
 
 function setupMcpConfig() {
@@ -178,7 +178,7 @@ function setupMcpConfig() {
         const content = fs.readFileSync(claudeJsonPath, 'utf-8');
         config = JSON.parse(content);
       } catch (e) {
-        log(`  warning: could not parse ${name} .claude.json, creating new`, 'yellow');
+        log(`  경고: ${name} .claude.json 파싱 실패, 새로 생성`, 'yellow');
       }
     }
 
@@ -195,39 +195,39 @@ function setupMcpConfig() {
 
     if (!existingConfig) {
       needsUpdate = true;
-      updateReason = 'adding';
+      updateReason = '추가';
     } else {
       // Check Windows wrapper requirement
       if (isWindows && existingConfig.command !== 'cmd') {
         needsUpdate = true;
-        updateReason = 'adding Windows cmd wrapper';
+        updateReason = 'Windows cmd 래퍼 추가';
       } else if (!isWindows && existingConfig.command === 'cmd') {
         needsUpdate = true;
-        updateReason = 'removing Windows cmd wrapper';
+        updateReason = 'Windows cmd 래퍼 제거';
       } else {
         // Check if args match (compare as arrays)
         const existingArgs = JSON.stringify(existingConfig.args || []);
         const newArgs = JSON.stringify(mcpConfig.args);
         if (existingArgs !== newArgs) {
           needsUpdate = true;
-          updateReason = 'updating args';
+          updateReason = '인자 업데이트';
         }
       }
     }
 
     if (!needsUpdate) {
-      log(`  [${name}] z-agent MCP config already up to date`, 'dim');
+      log(`  [${name}] z-agent MCP 설정 이미 최신`, 'dim');
       continue;
     }
 
-    log(`  [${name}] ${updateReason} z-agent MCP config`, 'green');
+    log(`  [${name}] z-agent MCP 설정 ${updateReason}`, 'green');
     config.mcpServers['z-agent'] = mcpConfig;
 
     // Write config
     fs.writeFileSync(claudeJsonPath, JSON.stringify(config, null, 2), 'utf-8');
   }
 
-  log(`  platform: ${isWindows ? 'Windows' : 'Unix'}`, 'dim');
+  log(`  플랫폼: ${isWindows ? 'Windows' : 'Unix'}`, 'dim');
 }
 
 function serve() {
@@ -235,7 +235,7 @@ function serve() {
   const serverPath = path.join(__dirname, '..', 'dist', 'index.js');
 
   if (!fs.existsSync(serverPath)) {
-    log('Error: MCP server not built. Run "npm run build" first.', 'red');
+    log('오류: MCP 서버가 빌드되지 않았습니다. "npm run build"를 먼저 실행하세요.', 'red');
     process.exit(1);
   }
 
@@ -247,7 +247,7 @@ function serve() {
   });
 
   child.on('error', (err) => {
-    console.error('Failed to start MCP server:', err);
+    console.error('MCP 서버 시작 실패:', err);
     process.exit(1);
   });
 
@@ -257,11 +257,11 @@ function serve() {
 }
 
 function showHelp() {
-  log('\nz-agent - Claude Code workflow management system\n', 'blue');
-  log('Usage:', 'yellow');
-  log('  npx z-agent init       Initialize z-agent in current directory');
-  log('  npx z-agent serve      Start MCP server (for Claude Code)');
-  log('  npx z-agent help       Show this help message\n');
+  log('\nz-agent - Claude Code 워크플로우 관리 시스템\n', 'blue');
+  log('사용법:', 'yellow');
+  log('  npx z-agent init       현재 디렉토리에 z-agent 초기화');
+  log('  npx z-agent serve      MCP 서버 시작 (Claude Code용)');
+  log('  npx z-agent help       도움말 표시\n');
 }
 
 // Main
@@ -283,7 +283,7 @@ switch (command) {
     init();
     break;
   default:
-    log(`Unknown command: ${command}`, 'red');
+    log(`알 수 없는 명령어: ${command}`, 'red');
     showHelp();
     process.exit(1);
 }

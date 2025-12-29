@@ -57,6 +57,8 @@ claude mcp list
 | `z_get_agent_prompt` | 난이도별 Agent 프롬프트 반환 |
 | `z_save_todo_result` | TODO 결과 파일 저장 |
 | `z_generate_summary` | Task 요약 생성 |
+| `z_analyze_parallel_groups` | 병렬 처리 가능한 TODO 그룹 분석 |
+| `z_get_parallel_prompt` | 병렬 실행용 프롬프트 목록 반환 |
 
 ### Lesson 관리
 
@@ -139,7 +141,7 @@ claude mcp list
 1. z_list_memories로 프로젝트 Memory 조회 (필수!)
 2. z_search_lessons로 관련 Lesson 검색
 3. z_analyze_difficulty로 난이도 분석
-4. z_create_task로 Task 생성
+4. z_create_task로 Task 생성 (targetFiles, dependsOn 지정 시 병렬 분석)
 5. 각 TODO에 대해:
    a. z_update_todo로 상태를 in_progress로 변경
    b. z_get_agent_prompt로 적절한 모델 프롬프트 획득
@@ -148,6 +150,18 @@ claude mcp list
    e. z_update_todo로 상태를 complete로 변경
 6. z_generate_summary로 최종 요약 생성
 7. (선택) z_record_lesson으로 Lesson 기록
+```
+
+### 병렬 처리 (파일 충돌 없을 때)
+
+```
+1. z_create_task로 Task 생성 시 targetFiles 지정
+   → parallelGroups, hasParallelOpportunity 반환
+2. z_analyze_parallel_groups로 병렬 그룹 확인
+3. z_get_parallel_prompt로 병렬 실행할 프롬프트 획득
+4. 각 TODO를 in_progress로 설정
+5. Task tool을 하나의 메시지에서 병렬로 호출
+6. 각 결과 저장 및 완료 처리
 ```
 
 ### /ask → /planning → /task 흐름

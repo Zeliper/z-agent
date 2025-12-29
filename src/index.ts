@@ -25,6 +25,15 @@ interface TodoItem {
   description: string;
   difficulty: "H" | "M" | "L";
   status: "pending" | "in_progress" | "complete" | "completed" | "cancelled" | "blocked";
+  targetFiles?: string[];  // 수정 예정 파일 목록 (병렬 처리 분석용)
+  dependsOn?: number[];    // 의존하는 TODO 인덱스 목록
+}
+
+interface ParallelGroup {
+  groupIndex: number;
+  todos: number[];         // TODO 인덱스 목록
+  canRunParallel: boolean;
+  reason: string;
 }
 
 interface DifficultyResult {
@@ -97,6 +106,96 @@ function ensureDirectories(): void {
       fs.mkdirSync(dirPath, { recursive: true });
     }
   }
+}
+
+// 병렬 처리 그룹 분석 함수
+function analyzeParallelGroups(todos: TodoItem[]): ParallelGroup[] {
+  const groups: ParallelGroup[] = [];
+  const processed = new Set<number>();
+  let groupIndex = 1;
+
+  // 의존성 그래프 구성
+  const hasDependency = (todo: TodoItem): boolean => {
+    return (todo.dependsOn && todo.dependsOn.length > 0) || false;
+  };
+
+  // 파일 충돌 검사
+  const hasFileConflict = (todo1: TodoItem, todo2: TodoItem): boolean => {
+    if (!todo1.targetFiles || !todo2.targetFiles) return false;
+    if (todo1.targetFiles.length === 0 || todo2.targetFiles.length === 0) return false;
+
+    return todo1.targetFiles.some(f1 =>
+      todo2.targetFiles!.some(f2 => f1 === f2)
+    );
+  };
+
+  // 의존성이 해결된 TODO 찾기
+  const canExecute = (todo: TodoItem, completed: Set<number>): boolean => {
+    if (!todo.dependsOn || todo.dependsOn.length === 0) return true;
+    return todo.dependsOn.every(dep => completed.has(dep));
+  };
+
+  // BFS로 레벨별 그룹화
+  const pendingTodos = todos.filter(t => t.status === "pending" || t.status === "in_progress");
+  const completed = new Set<number>();
+
+  while (processed.size < pendingTodos.length) {
+    // 현재 실행 가능한 TODO들 찾기
+    const executable = pendingTodos.filter(t =>
+      !processed.has(t.index) &&
+      (!t.dependsOn || t.dependsOn.every(dep => completed.has(dep)))
+    );
+
+    if (executable.length === 0) {
+      // 순환 의존성이 있거나 더 이상 진행 불가
+      break;
+    }
+
+    // 파일 충돌 없이 병렬 실행 가능한 그룹 찾기
+    const parallelGroup: number[] = [];
+    const usedFiles = new Set<string>();
+
+    for (const todo of executable) {
+      // 이미 처리된 TODO 건너뛰기
+      if (processed.has(todo.index)) continue;
+
+      // 파일 충돌 검사
+      let hasConflict = false;
+      if (todo.targetFiles && todo.targetFiles.length > 0) {
+        for (const file of todo.targetFiles) {
+          if (usedFiles.has(file)) {
+            hasConflict = true;
+            break;
+          }
+        }
+      }
+
+      if (!hasConflict) {
+        parallelGroup.push(todo.index);
+        if (todo.targetFiles) {
+          todo.targetFiles.forEach(f => usedFiles.add(f));
+        }
+      }
+    }
+
+    if (parallelGroup.length > 0) {
+      groups.push({
+        groupIndex,
+        todos: parallelGroup,
+        canRunParallel: parallelGroup.length > 1,
+        reason: parallelGroup.length > 1
+          ? "파일 충돌 없음, 병렬 실행 가능"
+          : "단일 작업"
+      });
+      groupIndex++;
+      parallelGroup.forEach(idx => {
+        processed.add(idx);
+        completed.add(idx);
+      });
+    }
+  }
+
+  return groups;
 }
 
 function getNextTaskId(): string {
@@ -2234,7 +2333,7 @@ const tools: Tool[] = [
   },
   {
     name: "z_create_task",
-    description: "새로운 Task를 생성합니다. 자동으로 난이도 분석 및 TODO 목록을 생성합니다.",
+    description: "새로운 Task를 생성합니다. 자동으로 난이도 분석 및 TODO 목록을 생성합니다. targetFiles와 dependsOn을 지정하면 병렬 처리 분석이 가능합니다.",
     inputSchema: {
       type: "object",
       properties: {
@@ -2249,9 +2348,19 @@ const tools: Tool[] = [
             properties: {
               description: { type: "string" },
               difficulty: { type: "string", enum: ["H", "M", "L"] },
+              targetFiles: {
+                type: "array",
+                items: { type: "string" },
+                description: "수정 예정 파일 경로 목록 (병렬 처리 분석용)"
+              },
+              dependsOn: {
+                type: "array",
+                items: { type: "number" },
+                description: "의존하는 TODO 인덱스 목록 (1-based)"
+              }
             },
           },
-          description: "TODO 항목 목록",
+          description: "TODO 항목 목록 (targetFiles, dependsOn으로 병렬 처리 가능)",
         },
       },
       required: ["description"],
@@ -3100,6 +3209,39 @@ const tools: Tool[] = [
       required: ["target"],
     },
   },
+  {
+    name: "z_analyze_parallel_groups",
+    description: "Task의 TODO 목록을 분석하여 병렬 처리 가능한 그룹을 반환합니다. targetFiles가 겹치지 않고 dependsOn 의존성이 해결된 TODO들은 병렬 실행 가능합니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskId: {
+          type: "string",
+          description: "분석할 Task ID (예: task-001)",
+        },
+      },
+      required: ["taskId"],
+    },
+  },
+  {
+    name: "z_get_parallel_prompt",
+    description: "병렬 실행할 TODO 그룹에 대한 Agent 프롬프트 목록을 반환합니다. 각 프롬프트를 개별 Task tool로 동시에 실행하세요.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskId: {
+          type: "string",
+          description: "Task ID",
+        },
+        todoIndexes: {
+          type: "array",
+          items: { type: "number" },
+          description: "병렬 실행할 TODO 인덱스 목록",
+        },
+      },
+      required: ["taskId", "todoIndexes"],
+    },
+  },
 ];
 
 // Create server
@@ -3150,11 +3292,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Create TODO list from input or generate default
         let todos: TodoItem[] = [];
         if (args.todos && Array.isArray(args.todos)) {
-          todos = (args.todos as Array<{ description: string; difficulty: string }>).map((t, i) => ({
+          todos = (args.todos as Array<{
+            description: string;
+            difficulty: string;
+            targetFiles?: string[];
+            dependsOn?: number[];
+          }>).map((t, i) => ({
             index: i + 1,
             description: t.description,
             difficulty: (t.difficulty as "H" | "M" | "L") || difficultyResult.difficulty,
             status: "pending" as const,
+            targetFiles: t.targetFiles || [],
+            dependsOn: t.dependsOn || [],
           }));
         } else {
           // Default single TODO
@@ -3163,6 +3312,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             description: description,
             difficulty: difficultyResult.difficulty,
             status: "pending" as const,
+            targetFiles: [],
+            dependsOn: [],
           }];
         }
 
@@ -3175,6 +3326,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           relatedLessons
         );
 
+        // 병렬 처리 그룹 분석
+        const parallelGroups = analyzeParallelGroups(todos);
+        const hasParallelOpportunity = parallelGroups.some(g => g.canRunParallel);
+
         return {
           content: [
             {
@@ -3186,7 +3341,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 suggestedModel: difficultyResult.suggestedModel,
                 todoCount: todos.length,
                 relatedLessons,
-                message: `Task ${taskId} 생성됨. 난이도: ${difficultyResult.difficulty}, 권장 모델: ${difficultyResult.suggestedModel}`,
+                parallelGroups,
+                hasParallelOpportunity,
+                message: hasParallelOpportunity
+                  ? `Task ${taskId} 생성됨. 병렬 처리 가능한 그룹이 있습니다. z_get_parallel_prompt로 병렬 실행하세요.`
+                  : `Task ${taskId} 생성됨. 난이도: ${difficultyResult.difficulty}, 권장 모델: ${difficultyResult.suggestedModel}`,
               }, null, 2),
             },
           ],
@@ -4213,6 +4372,166 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: output,
             },
           ],
+        };
+      }
+
+      case "z_analyze_parallel_groups": {
+        const taskId = args.taskId as string;
+        const taskFilePath = path.join(getZAgentRoot(), "tasks", `${taskId}.md`);
+
+        if (!fs.existsSync(taskFilePath)) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({ error: `Task ${taskId} not found` }),
+            }],
+            isError: true,
+          };
+        }
+
+        // Parse TODO list from task file
+        const content = fs.readFileSync(taskFilePath, "utf-8").replace(/\r\n/g, "\n");
+        const todoMatch = content.match(/# TODO List\n([\s\S]*?)(?=\n#|$)/);
+
+        if (!todoMatch) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({ error: "TODO list not found in task file" }),
+            }],
+            isError: true,
+          };
+        }
+
+        // Parse TODO items with targetFiles info from task folder
+        const taskFolder = path.join(getZAgentRoot(), "tasks", taskId);
+        const todos: TodoItem[] = [];
+
+        const todoLines = todoMatch[1].split("\n").filter(l => l.trim());
+        for (const line of todoLines) {
+          const match = line.match(/([⏳🔄✅❌🚫]) - (\d+)\. (.+) \(([HML])\)/);
+          if (match) {
+            const [, emoji, indexStr, desc, diff] = match;
+            const index = parseInt(indexStr);
+
+            // Check if there's a result file with changedFiles info
+            let targetFiles: string[] = [];
+            const resultPath = path.join(taskFolder, `todo-${index}-result.md`);
+            if (fs.existsSync(resultPath)) {
+              const resultContent = fs.readFileSync(resultPath, "utf-8").replace(/\r\n/g, "\n");
+              const filesMatch = resultContent.match(/changedFiles:\s*\[(.*?)\]/);
+              if (filesMatch) {
+                targetFiles = filesMatch[1].split(",").map(f => f.trim().replace(/"/g, "")).filter(Boolean);
+              }
+            }
+
+            const statusMap: Record<string, TodoItem["status"]> = {
+              "⏳": "pending",
+              "🔄": "in_progress",
+              "✅": "complete",
+              "❌": "cancelled",
+              "🚫": "blocked",
+            };
+
+            todos.push({
+              index,
+              description: desc,
+              difficulty: diff as "H" | "M" | "L",
+              status: statusMap[emoji] || "pending",
+              targetFiles,
+              dependsOn: [],
+            });
+          }
+        }
+
+        const parallelGroups = analyzeParallelGroups(todos);
+        const hasParallelOpportunity = parallelGroups.some(g => g.canRunParallel);
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              taskId,
+              todoCount: todos.length,
+              parallelGroups,
+              hasParallelOpportunity,
+              instruction: hasParallelOpportunity
+                ? "병렬 실행 가능한 그룹이 있습니다. z_get_parallel_prompt를 사용하여 병렬 실행하세요."
+                : "모든 TODO가 순차 실행이 필요합니다.",
+            }, null, 2),
+          }],
+        };
+      }
+
+      case "z_get_parallel_prompt": {
+        const taskId = args.taskId as string;
+        const todoIndexes = args.todoIndexes as number[];
+        const taskFilePath = path.join(getZAgentRoot(), "tasks", `${taskId}.md`);
+
+        if (!fs.existsSync(taskFilePath)) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({ error: `Task ${taskId} not found` }),
+            }],
+            isError: true,
+          };
+        }
+
+        // Parse TODO list
+        const content = fs.readFileSync(taskFilePath, "utf-8").replace(/\r\n/g, "\n");
+        const todoMatch = content.match(/# TODO List\n([\s\S]*?)(?=\n#|$)/);
+
+        if (!todoMatch) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({ error: "TODO list not found in task file" }),
+            }],
+            isError: true,
+          };
+        }
+
+        const todoLines = todoMatch[1].split("\n").filter(l => l.trim());
+        const prompts: Array<{
+          todoIndex: number;
+          description: string;
+          difficulty: string;
+          model: string;
+          prompt: string;
+        }> = [];
+
+        for (const line of todoLines) {
+          const match = line.match(/([⏳🔄✅❌🚫]) - (\d+)\. (.+) \(([HML])\)/);
+          if (match) {
+            const [, , indexStr, desc, diff] = match;
+            const index = parseInt(indexStr);
+
+            if (todoIndexes.includes(index)) {
+              const model = DIFFICULTY_MODEL_MAP[diff] || "sonnet";
+              const prompt = getAgentPrompt(diff as "H" | "M" | "L", desc);
+
+              prompts.push({
+                todoIndex: index,
+                description: desc,
+                difficulty: diff,
+                model,
+                prompt,
+              });
+            }
+          }
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              taskId,
+              parallelCount: prompts.length,
+              prompts,
+              instruction: `위 ${prompts.length}개의 프롬프트를 각각 별도의 Task tool로 동시에 실행하세요. 모델은 각 항목의 model 필드를 참고하세요.`,
+            }, null, 2),
+          }],
         };
       }
 

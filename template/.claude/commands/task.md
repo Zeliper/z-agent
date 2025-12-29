@@ -42,6 +42,8 @@
 - ✅ z_query (통합 검색)
 - ✅ z_list_memories (Memory 목록 조회)
 - ✅ z_search_memories (Memory 검색)
+- ✅ z_analyze_parallel_groups (병렬 처리 분석)
+- ✅ z_get_parallel_prompt (병렬 실행 프롬프트)
 
 ## 상호 참조 기능
 
@@ -208,6 +210,8 @@ z_link_answer_to_task(answerId: "answer-001", taskId: "task-001")
 ```
 
 ### 공통: TODO 처리
+
+#### 옵션 A: 순차 처리 (기본)
 ```
 for each TODO:
   a. z_update_todo(taskId, todoIndex, "in_progress")
@@ -221,6 +225,72 @@ for each TODO:
   d. z_save_todo_result(taskId, todoId, status, summary, details)
 
   e. z_update_todo(taskId, todoIndex, "complete")
+```
+
+#### 옵션 B: 병렬 처리 (파일 충돌 없을 때)
+
+**z_create_task 시 targetFiles 지정:**
+```
+z_create_task(
+  description: "멀티 파일 작업",
+  todos: [
+    { description: "API 수정", difficulty: "M", targetFiles: ["src/api.ts"] },
+    { description: "UI 수정", difficulty: "M", targetFiles: ["src/ui.tsx"] },
+    { description: "테스트 추가", difficulty: "L", targetFiles: ["test/api.test.ts"] }
+  ]
+)
+→ parallelGroups 정보 반환
+→ hasParallelOpportunity: true (파일 충돌 없음)
+```
+
+**병렬 실행:**
+```
+# 1. 병렬 그룹 확인
+z_analyze_parallel_groups(taskId: "task-001")
+→ parallelGroups: [
+    { groupIndex: 1, todos: [1, 2, 3], canRunParallel: true }
+  ]
+
+# 2. 병렬 실행할 TODO들의 프롬프트 획득
+z_get_parallel_prompt(taskId: "task-001", todoIndexes: [1, 2, 3])
+→ prompts: [
+    { todoIndex: 1, model: "sonnet", prompt: "..." },
+    { todoIndex: 2, model: "sonnet", prompt: "..." },
+    { todoIndex: 3, model: "haiku", prompt: "..." }
+  ]
+
+# 3. 각 TODO를 in_progress로 설정
+z_update_todo(taskId, 1, "in_progress")
+z_update_todo(taskId, 2, "in_progress")
+z_update_todo(taskId, 3, "in_progress")
+
+# 4. Task tool을 하나의 메시지에서 병렬로 호출
+# (각 프롬프트를 별도의 Task tool call로 실행)
+
+# 5. 각 결과 저장 및 완료 처리
+z_save_todo_result(taskId, 1, "complete", summary, details, changedFiles)
+z_save_todo_result(taskId, 2, "complete", summary, details, changedFiles)
+z_save_todo_result(taskId, 3, "complete", summary, details, changedFiles)
+
+z_update_todo(taskId, 1, "complete")
+z_update_todo(taskId, 2, "complete")
+z_update_todo(taskId, 3, "complete")
+```
+
+**의존성이 있는 경우:**
+```
+z_create_task(
+  description: "의존성 있는 작업",
+  todos: [
+    { description: "인터페이스 정의", difficulty: "M", targetFiles: ["src/types.ts"] },
+    { description: "API 구현", difficulty: "H", targetFiles: ["src/api.ts"], dependsOn: [1] },
+    { description: "UI 구현", difficulty: "M", targetFiles: ["src/ui.tsx"], dependsOn: [1] }
+  ]
+)
+→ parallelGroups: [
+    { groupIndex: 1, todos: [1], canRunParallel: false },      # 먼저 실행
+    { groupIndex: 2, todos: [2, 3], canRunParallel: true }     # TODO 1 완료 후 병렬 실행
+  ]
 ```
 
 ### 최종 요약
