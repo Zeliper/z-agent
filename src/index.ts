@@ -114,27 +114,6 @@ function analyzeParallelGroups(todos: TodoItem[]): ParallelGroup[] {
   const processed = new Set<number>();
   let groupIndex = 1;
 
-  // 의존성 그래프 구성
-  const hasDependency = (todo: TodoItem): boolean => {
-    return (todo.dependsOn && todo.dependsOn.length > 0) || false;
-  };
-
-  // 파일 충돌 검사
-  const hasFileConflict = (todo1: TodoItem, todo2: TodoItem): boolean => {
-    if (!todo1.targetFiles || !todo2.targetFiles) return false;
-    if (todo1.targetFiles.length === 0 || todo2.targetFiles.length === 0) return false;
-
-    return todo1.targetFiles.some(f1 =>
-      todo2.targetFiles!.some(f2 => f1 === f2)
-    );
-  };
-
-  // 의존성이 해결된 TODO 찾기
-  const canExecute = (todo: TodoItem, completed: Set<number>): boolean => {
-    if (!todo.dependsOn || todo.dependsOn.length === 0) return true;
-    return todo.dependsOn.every(dep => completed.has(dep));
-  };
-
   // BFS로 레벨별 그룹화
   const pendingTodos = todos.filter(t => t.status === "pending" || t.status === "in_progress");
   const completed = new Set<number>();
@@ -817,12 +796,21 @@ function createTodoTemplateFile(
   const todoFileName = `todo-${String(todo.index).padStart(3, "0")}.md`;
   const todoFilePath = path.join(taskFolder, todoFileName);
 
+  const targetFilesStr = todo.targetFiles && todo.targetFiles.length > 0
+    ? `[${todo.targetFiles.map(f => `"${f}"`).join(", ")}]`
+    : "[]";
+  const dependsOnStr = todo.dependsOn && todo.dependsOn.length > 0
+    ? `[${todo.dependsOn.join(", ")}]`
+    : "[]";
+
   const content = `---
 todoId: ${todo.index}
 taskId: ${taskId}
 description: ${todo.description}
 difficulty: ${todo.difficulty}
 status: ${todo.status}
+targetFiles: ${targetFilesStr}
+dependsOn: ${dependsOnStr}
 createdAt: ${createdAt}
 updatedAt: ${createdAt}
 ---
@@ -4404,7 +4392,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         // Parse TODO items with targetFiles info from task folder
-        const taskFolder = path.join(getZAgentRoot(), "tasks", taskId);
+        const taskFolder = path.join(getZAgentRoot(), taskId);
         const todos: TodoItem[] = [];
 
         const todoLines = todoMatch[1].split("\n").filter(l => l.trim());
@@ -4414,14 +4402,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const [, emoji, indexStr, desc, diff] = match;
             const index = parseInt(indexStr);
 
-            // Check if there's a result file with changedFiles info
+            // Read targetFiles and dependsOn from TODO template file
             let targetFiles: string[] = [];
-            const resultPath = path.join(taskFolder, `todo-${index}-result.md`);
-            if (fs.existsSync(resultPath)) {
-              const resultContent = fs.readFileSync(resultPath, "utf-8").replace(/\r\n/g, "\n");
-              const filesMatch = resultContent.match(/changedFiles:\s*\[(.*?)\]/);
-              if (filesMatch) {
-                targetFiles = filesMatch[1].split(",").map(f => f.trim().replace(/"/g, "")).filter(Boolean);
+            let dependsOn: number[] = [];
+            const todoFileName = `todo-${String(index).padStart(3, "0")}.md`;
+            const todoFilePath = path.join(taskFolder, todoFileName);
+
+            if (fs.existsSync(todoFilePath)) {
+              const todoContent = fs.readFileSync(todoFilePath, "utf-8").replace(/\r\n/g, "\n");
+
+              // Parse targetFiles from frontmatter
+              const targetFilesMatch = todoContent.match(/targetFiles:\s*\[(.*?)\]/);
+              if (targetFilesMatch && targetFilesMatch[1].trim()) {
+                targetFiles = targetFilesMatch[1]
+                  .split(",")
+                  .map(f => f.trim().replace(/"/g, ""))
+                  .filter(Boolean);
+              }
+
+              // Parse dependsOn from frontmatter
+              const dependsOnMatch = todoContent.match(/dependsOn:\s*\[(.*?)\]/);
+              if (dependsOnMatch && dependsOnMatch[1].trim()) {
+                dependsOn = dependsOnMatch[1]
+                  .split(",")
+                  .map(n => parseInt(n.trim()))
+                  .filter(n => !isNaN(n));
               }
             }
 
@@ -4439,7 +4444,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               difficulty: diff as "H" | "M" | "L",
               status: statusMap[emoji] || "pending",
               targetFiles,
-              dependsOn: [],
+              dependsOn,
             });
           }
         }
