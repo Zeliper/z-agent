@@ -229,6 +229,11 @@ for each TODO:
 
 #### 옵션 B: 병렬 처리 (파일 충돌 없을 때)
 
+**⚠️ 중요: 병렬 처리 규칙**
+- **하나의 응답에서 여러 도구를 동시에 호출해야만 병렬 실행됨**
+- **순차 호출 금지**: 도구를 하나씩 호출하면 병렬이 아님!
+- Task tool, z_write_file, z_update_todo 등 모두 동일한 규칙 적용
+
 **z_create_task 시 targetFiles 지정:**
 ```
 z_create_task(
@@ -243,7 +248,7 @@ z_create_task(
 → hasParallelOpportunity: true (파일 충돌 없음)
 ```
 
-**병렬 실행:**
+**병렬 실행 단계:**
 ```
 # 1. 병렬 그룹 확인
 z_analyze_parallel_groups(taskId: "task-001")
@@ -253,48 +258,54 @@ z_analyze_parallel_groups(taskId: "task-001")
 
 # 2. 병렬 실행할 TODO들의 프롬프트 획득
 z_get_parallel_prompt(taskId: "task-001", todoIndexes: [1, 2, 3])
-→ prompts: [
-    { todoIndex: 1, model: "sonnet", prompt: "..." },
-    { todoIndex: 2, model: "sonnet", prompt: "..." },
-    { todoIndex: 3, model: "haiku", prompt: "..." }
-  ]
+→ prompts 배열과 함께 병렬 실행 지시 반환
+→ instruction, warning, howTo 필드 확인!
 
-# 3. 각 TODO를 in_progress로 설정
-z_update_todo(taskId, 1, "in_progress")
-z_update_todo(taskId, 2, "in_progress")
-z_update_todo(taskId, 3, "in_progress")
+# 3. 각 TODO를 in_progress로 설정 (이것도 병렬 가능)
+# ✅ 올바른 방법: 하나의 응답에서 여러 z_update_todo 동시 호출
+z_update_todo(taskId, 1, "in_progress")  ─┐
+z_update_todo(taskId, 2, "in_progress")  ─┼─ 하나의 응답에서 동시 호출
+z_update_todo(taskId, 3, "in_progress")  ─┘
 
-# 4. Task tool을 하나의 응답에서 동시 호출 (병렬 실행)
-# ⚠️ 중요: 반드시 하나의 응답에서 여러 Task tool call을 보내야 병렬 실행됨
-# 순차적으로 하나씩 호출하면 병렬이 아님!
+# 4. Task tool 병렬 실행
+# ⚠️ 필수: 하나의 응답에서 여러 Task tool을 동시에 호출!
+# ❌ 금지: Task tool을 하나씩 순차 호출하면 병렬 실행이 아님
 
-# 예시 (하나의 응답에서):
-<function_calls>
-<invoke name="Task">
-  <parameter name="subagent_type">general-purpose</parameter>
-  <parameter name="model">sonnet</parameter>
-  <parameter name="prompt">TODO 1: API 수정...</parameter>
-</invoke>
-<invoke name="Task">
-  <parameter name="subagent_type">general-purpose</parameter>
-  <parameter name="model">sonnet</parameter>
-  <parameter name="prompt">TODO 2: UI 수정...</parameter>
-</invoke>
-<invoke name="Task">
-  <parameter name="subagent_type">general-purpose</parameter>
-  <parameter name="model">haiku</parameter>
-  <parameter name="prompt">TODO 3: 테스트 추가...</parameter>
-</invoke>
-</function_calls>
+# z_get_parallel_prompt 결과의 각 prompt를 사용하여:
+Task(subagent_type="general-purpose", model="sonnet", prompt=prompts[0].prompt)  ─┐
+Task(subagent_type="general-purpose", model="sonnet", prompt=prompts[1].prompt)  ─┼─ 동시 호출!
+Task(subagent_type="general-purpose", model="haiku", prompt=prompts[2].prompt)   ─┘
 
-# 5. 모든 Task 완료 후, 각 결과 저장 및 완료 처리
-z_save_todo_result(taskId, 1, "complete", summary, details, changedFiles)
-z_save_todo_result(taskId, 2, "complete", summary, details, changedFiles)
-z_save_todo_result(taskId, 3, "complete", summary, details, changedFiles)
+# 5. 모든 Task 완료 후, 결과 저장 및 완료 처리 (이것도 병렬 가능)
+z_save_todo_result(taskId, 1, "complete", summary, details, changedFiles)  ─┐
+z_save_todo_result(taskId, 2, "complete", summary, details, changedFiles)  ─┼─ 동시 호출
+z_save_todo_result(taskId, 3, "complete", summary, details, changedFiles)  ─┘
 
-z_update_todo(taskId, 1, "complete")
-z_update_todo(taskId, 2, "complete")
-z_update_todo(taskId, 3, "complete")
+z_update_todo(taskId, 1, "complete")  ─┐
+z_update_todo(taskId, 2, "complete")  ─┼─ 동시 호출
+z_update_todo(taskId, 3, "complete")  ─┘
+```
+
+**❌ 잘못된 예시 (순차 호출 - 병렬 아님!):**
+```
+# 첫 번째 응답
+Task(subagent_type="general-purpose", prompt=prompts[0].prompt)
+→ 결과 기다림
+
+# 두 번째 응답
+Task(subagent_type="general-purpose", prompt=prompts[1].prompt)
+→ 결과 기다림
+
+# 이렇게 하면 순차 실행됨!
+```
+
+**✅ 올바른 예시 (병렬 호출):**
+```
+# 하나의 응답에서 모든 Task tool 동시 호출
+Task(prompt=prompts[0].prompt) ─┐
+Task(prompt=prompts[1].prompt) ─┼─ 하나의 응답!
+Task(prompt=prompts[2].prompt) ─┘
+→ 3개가 병렬로 실행됨
 ```
 
 **의존성이 있는 경우:**

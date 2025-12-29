@@ -3714,7 +3714,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                                 taskId,
                                 parallelCount: prompts.length,
                                 prompts,
-                                instruction: `위 ${prompts.length}개의 프롬프트를 각각 별도의 Task tool로 동시에 실행하세요. 모델은 각 항목의 model 필드를 참고하세요.`,
+                                instruction: `[필수] 위 ${prompts.length}개의 Task tool 호출을 반드시 하나의 응답에서 동시에 보내세요! 순차 호출 금지!`,
+                                warning: "Task tool을 하나씩 순차적으로 호출하면 병렬 실행이 아닙니다. 반드시 하나의 메시지에서 여러 Task tool을 동시에 호출하세요.",
+                                howTo: "각 prompt의 model 필드를 참고하여 Task(subagent_type='general-purpose', model=model, prompt=prompt) 형태로 동시 호출하세요.",
                             }, null, 2),
                         }],
                 };
